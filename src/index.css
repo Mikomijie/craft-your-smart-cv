@@ -90,3 +90,113 @@
     text-wrap: pretty;
   }
 }
+
+/* ── Landing Background Layer 1: Glowing Orbs ── */
+@keyframes orb-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(60px, -40px) scale(1.1); }
+  50% { transform: translate(-30px, 50px) scale(0.95); }
+  75% { transform: translate(40px, 20px) scale(1.05); }
+}
+@keyframes orb-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-50px, 30px) scale(1.08); }
+  66% { transform: translate(40px, -60px) scale(0.92); }
+}
+@keyframes orb-drift-3 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(70px, 40px); }
+}
+@keyframes orb-drift-4 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40% { transform: translate(-40px, -50px) scale(1.12); }
+  80% { transform: translate(30px, 30px) scale(0.9); }
+}
+
+.landing-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(100px);
+  will-change: transform;
+}
+.landing-orb-1 {
+  width: 420px; height: 420px;
+  top: 5%; left: 10%;
+  background: hsl(221 83% 53% / 0.12);
+  animation: orb-drift-1 22s ease-in-out infinite;
+}
+.landing-orb-2 {
+  width: 360px; height: 360px;
+  top: 30%; right: 8%;
+  background: hsl(243 75% 59% / 0.10);
+  animation: orb-drift-2 26s ease-in-out infinite;
+}
+.landing-orb-3 {
+  width: 300px; height: 300px;
+  bottom: 15%; left: 35%;
+  background: hsl(221 83% 53% / 0.08);
+  animation: orb-drift-3 20s ease-in-out infinite;
+}
+.landing-orb-4 {
+  width: 380px; height: 380px;
+  top: 50%; right: 30%;
+  background: hsl(243 75% 59% / 0.15);
+  animation: orb-drift-4 28s ease-in-out infinite;
+}
+
+/* ── Landing Background Layer 2: Drifting Words ── */
+@keyframes drift-up {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0;
+  }
+  10% { opacity: 0.04; }
+  90% { opacity: 0.04; }
+  100% {
+    transform: translateY(-110vh) rotate(6deg);
+    opacity: 0;
+  }
+}
+
+.landing-drift-word {
+  color: hsl(var(--landing-fg));
+  opacity: 0;
+  animation: drift-up 20s linear infinite;
+}
+
+/* ── Landing Background Layer 3: Circuit Lines ── */
+@keyframes circuit-draw {
+  0% { stroke-dashoffset: var(--len, 1000); opacity: 0; }
+  10% { opacity: 0.06; }
+  90% { opacity: 0.06; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+.landing-circuit-svg {
+  opacity: 0.6;
+}
+
+.landing-circuit-path {
+  stroke: hsl(221 83% 53%);
+  stroke-width: 1;
+  fill: none;
+  opacity: 0;
+  animation: circuit-draw 6s ease-in-out forwards;
+}
+.circuit-delay-1 { animation-delay: 0.5s; }
+.circuit-delay-2 { animation-delay: 1.2s; }
+.circuit-delay-3 { animation-delay: 1.8s; }
+.circuit-delay-4 { animation-delay: 2.5s; }
+.circuit-delay-5 { animation-delay: 3.2s; }
+
+@keyframes circuit-dot-appear {
+  0% { opacity: 0; r: 0; }
+  50% { opacity: 0.12; r: 3; }
+  100% { opacity: 0.06; r: 2.5; }
+}
+
+.landing-circuit-dot {
+  fill: hsl(221 83% 53%);
+  opacity: 0;
+  animation: circuit-dot-appear 1s ease-out forwards;
+}

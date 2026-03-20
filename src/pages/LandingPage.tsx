@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { FileText, Sparkles, Download, Zap, ArrowRight } from "lucide-react";
+import { GlowingOrbs, DriftingWords, CircuitLines } from "@/components/LandingBackgroundLayers";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -39,9 +40,14 @@ const features = [
 
 const LandingPage = () => {
   return (
-    <div className="landing-section min-h-screen">
+    <div className="landing-section min-h-screen relative">
+      {/* Background layers */}
+      <GlowingOrbs />
+      <DriftingWords />
+      <CircuitLines />
+
       {/* Nav */}
-      <nav className="flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
+      <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
         <motion.div
           initial={{ opacity: 0, x: -12 }}
           animate={{ opacity: 1, x: 0 }}
@@ -69,7 +75,7 @@ const LandingPage = () => {
       </nav>
 
       {/* Hero */}
-      <section className="max-w-4xl mx-auto px-6 pt-24 pb-20 text-center">
+      <section className="relative z-10 max-w-4xl mx-auto px-6 pt-24 pb-20 text-center">
         <motion.div
           custom={0}
           variants={fadeUp}
@@ -128,7 +134,7 @@ const LandingPage = () => {
       </section>
 
       {/* Features */}
-      <section className="max-w-5xl mx-auto px-6 pb-32">
+      <section className="relative z-10 max-w-5xl mx-auto px-6 pb-32">
         <div className="grid sm:grid-cols-2 gap-5">
           {features.map((f, i) => (
             <motion.div
@@ -151,7 +157,7 @@ const LandingPage = () => {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-landing-border py-8 text-center text-sm text-landing-muted">
+      <footer className="relative z-10 border-t border-landing-border py-8 text-center text-sm text-landing-muted">
         <p>CraftCV — built with care, no data leaves your browser.</p>
       </footer>
     </div>
