@@ -75,7 +75,7 @@ const LandingPage = () => {
       </nav>
 
       {/* Hero */}
-      <section className="max-w-4xl mx-auto px-6 pt-24 pb-20 text-center">
+      <section className="relative z-10 max-w-4xl mx-auto px-6 pt-24 pb-20 text-center">
         <motion.div
           custom={0}
           variants={fadeUp}
