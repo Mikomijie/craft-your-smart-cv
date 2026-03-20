@@ -37,11 +37,11 @@
     --radius: 0.75rem;
 
     /* Landing page tokens */
-    --landing-bg: 0 0% 4%;
-    --landing-fg: 0 0% 100%;
-    --landing-muted: 0 0% 40%;
-    --landing-card: 0 0% 8%;
-    --landing-border: 0 0% 15%;
+    --landing-bg: 220 15% 96%;
+    --landing-fg: 220 20% 10%;
+    --landing-muted: 220 10% 50%;
+    --landing-card: 220 15% 100%;
+    --landing-border: 220 13% 88%;
 
     /* App surface tokens */
     --surface: 220 20% 97%;
