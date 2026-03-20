@@ -45,7 +45,7 @@ const LandingPage = () => {
         <motion.div
           initial={{ opacity: 0, x: -12 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.5, ease }}
           className="flex items-center gap-2"
         >
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
