@@ -47,7 +47,7 @@ const LandingPage = () => {
       <CircuitLines />
 
       {/* Nav */}
-      <nav className="flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
+      <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
         <motion.div
           initial={{ opacity: 0, x: -12 }}
           animate={{ opacity: 1, x: 0 }}
