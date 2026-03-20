@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { FileText, Sparkles, Download, Zap, ArrowRight } from "lucide-react";
+import { GlowingOrbs, DriftingWords, CircuitLines } from "@/components/LandingBackgroundLayers";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
