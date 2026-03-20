@@ -40,7 +40,12 @@ const features = [
 
 const LandingPage = () => {
   return (
-    <div className="landing-section min-h-screen">
+    <div className="landing-section min-h-screen relative">
+      {/* Background layers */}
+      <GlowingOrbs />
+      <DriftingWords />
+      <CircuitLines />
+
       {/* Nav */}
       <nav className="flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
         <motion.div
