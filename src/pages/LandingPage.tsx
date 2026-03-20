@@ -157,7 +157,7 @@ const LandingPage = () => {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-landing-border py-8 text-center text-sm text-landing-muted">
+      <footer className="relative z-10 border-t border-landing-border py-8 text-center text-sm text-landing-muted">
         <p>CraftCV — built with care, no data leaves your browser.</p>
       </footer>
     </div>
