@@ -134,7 +134,7 @@ const LandingPage = () => {
       </section>
 
       {/* Features */}
-      <section className="max-w-5xl mx-auto px-6 pb-32">
+      <section className="relative z-10 max-w-5xl mx-auto px-6 pb-32">
         <div className="grid sm:grid-cols-2 gap-5">
           {features.map((f, i) => (
             <motion.div
