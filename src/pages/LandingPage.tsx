@@ -2,13 +2,15 @@ import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { FileText, Sparkles, Download, Zap, ArrowRight } from "lucide-react";
 
+const ease = [0.16, 1, 0.3, 1] as const;
+
 const fadeUp = {
   hidden: { opacity: 0, y: 20, filter: "blur(4px)" },
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
     filter: "blur(0px)",
-    transition: { delay: i * 0.1, duration: 0.6, ease: [0.16, 1, 0.3, 1] },
+    transition: { delay: i * 0.1, duration: 0.6, ease },
   }),
 };
 
