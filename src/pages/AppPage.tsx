@@ -50,9 +50,11 @@ const defaultCV: CVData = {
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+const ease = [0.16, 1, 0.3, 1] as const;
+
 const sectionAnim = {
   hidden: { opacity: 0, y: 16, filter: "blur(4px)" },
-  visible: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
+  visible: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.5, ease } },
 };
 
 // Input component
