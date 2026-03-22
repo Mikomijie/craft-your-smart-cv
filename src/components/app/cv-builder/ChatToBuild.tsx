@@ -4,100 +4,23 @@ import { Send, Bot, User } from "lucide-react";
 import CVPreview from "./CVPreview";
 import type { CVData, ChatMessage } from "./types";
 import { defaultCV, uid } from "./types";
+import { extractDataFromMessages } from "./extractCVData";
 import { toast } from "sonner";
 
-// Simulated AI conversation flow — extracts CV data from user messages
 const INITIAL_MSG: ChatMessage = {
   id: "init",
   role: "assistant",
   content: "Hey! I'm going to help you build an amazing CV. Let's start simple — what's your name and what kind of role are you looking for?",
 };
 
-const FOLLOW_UPS = [
+const FOLLOW_UPS: string[] = [
   "Great! Now tell me about your most recent work experience — company, role, and what you did there.",
-  "Awesome. Do you have any more work experience to add? If not, let's move on to education.",
-  "What about your education? Where did you study and what degree did you earn?",
+  "Awesome. Do you have any more work experience to add? If not, just say 'no' and we'll move on to education.",
+  "What about your education? Where did you study, what degree, and your grade/GPA if you'd like to include it?",
   "Almost there! List some of your key skills — things like programming languages, tools, or soft skills.",
   "Your CV is looking solid! Add your email, phone, and location so employers can reach you. You can also write a short professional summary.",
   "Looking great! You can keep adding details or save your CV when you're ready.",
 ];
-
-function extractDataFromMessages(messages: ChatMessage[]): CVData {
-  const cv: CVData = JSON.parse(JSON.stringify(defaultCV));
-  const userMsgs = messages.filter((m) => m.role === "user").map((m) => m.content);
-
-  // Simple heuristic extraction from conversation
-  if (userMsgs[0]) {
-    const first = userMsgs[0];
-    // Try to extract name — first line or before common delimiters
-    const nameMatch = first.match(/(?:(?:i'm|i am|my name is|name is|name:)\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i)
-      || first.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/m);
-    if (nameMatch) cv.personal.name = nameMatch[1].trim();
-
-    const roleMatch = first.match(/(?:looking for|role|position|job|work as|want to be)\s+(?:a\s+)?(.+?)(?:\.|$)/i);
-    if (roleMatch) cv.personal.title = roleMatch[1].trim();
-    // Fallback: if no role keyword, take text after name mention
-    if (!cv.personal.title && cv.personal.name) {
-      const afterName = first.slice(first.toLowerCase().indexOf(cv.personal.name.toLowerCase()) + cv.personal.name.length);
-      const fallback = afterName.replace(/^[\s,.-]+/, "").split(/[.!?\n]/)[0].trim();
-      if (fallback.length > 3 && fallback.length < 60) cv.personal.title = fallback;
-    }
-  }
-
-  // Experience from second message
-  if (userMsgs[1]) {
-    const txt = userMsgs[1];
-    const companyMatch = txt.match(/(?:at|company|worked at|for)\s+([A-Z][\w\s&]+?)(?:[,.]|\s+as)/i);
-    const roleMatch = txt.match(/(?:as a|role:|position:|was a)\s+(.+?)(?:[,.]|$)/im);
-    cv.experience.push({
-      id: uid(),
-      company: companyMatch?.[1]?.trim() || "",
-      role: roleMatch?.[1]?.trim() || "",
-      startDate: "",
-      endDate: "Present",
-      description: txt.length > 30 ? txt : "",
-    });
-  }
-
-  // Education from third or fourth message
-  const eduMsg = userMsgs[3] || userMsgs[2];
-  if (eduMsg) {
-    const schoolMatch = eduMsg.match(/(?:at|from|studied at|university|college)\s+(.+?)(?:[,.]|$)/i);
-    const degreeMatch = eduMsg.match(/(?:degree|studied|b\.?s\.?|m\.?s\.?|bachelor|master|ph\.?d)\s*(?:in\s+)?(.+?)(?:[,.]|$)/i);
-    if (schoolMatch || degreeMatch) {
-      cv.education.push({
-        id: uid(),
-        school: schoolMatch?.[1]?.trim() || "",
-        degree: degreeMatch?.[1]?.trim() || "",
-        startDate: "",
-        endDate: "",
-      });
-    }
-  }
-
-  // Skills from fourth or fifth message
-  const skillsMsg = userMsgs[4] || userMsgs[3];
-  if (skillsMsg) {
-    const items = skillsMsg.split(/[,;\n]+/).map((s) => s.trim()).filter((s) => s.length > 1 && s.length < 40);
-    cv.skills = items.slice(0, 15);
-  }
-
-  // Contact info from fifth or sixth message
-  const contactMsg = userMsgs[5] || userMsgs[4];
-  if (contactMsg) {
-    const emailMatch = contactMsg.match(/[\w.-]+@[\w.-]+\.\w+/);
-    if (emailMatch) cv.personal.email = emailMatch[0];
-    const phoneMatch = contactMsg.match(/[\d+][\d\s()-]{6,}/);
-    if (phoneMatch) cv.personal.phone = phoneMatch[0].trim();
-    const locMatch = contactMsg.match(/(?:location|based in|live in|from)\s+(.+?)(?:[,.]|$)/i);
-    if (locMatch) cv.personal.location = locMatch[1].trim();
-    // Summary: take remaining text as summary
-    const remaining = contactMsg.replace(emailMatch?.[0] || "", "").replace(phoneMatch?.[0] || "", "").replace(locMatch?.[0] || "", "").trim();
-    if (remaining.length > 20) cv.personal.summary = remaining;
-  }
-
-  return cv;
-}
 
 const ChatToBuild = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MSG]);
@@ -119,11 +42,9 @@ const ChatToBuild = () => {
     setMessages(updated);
     setInput("");
 
-    // Extract CV data
     const newData = extractDataFromMessages(updated);
     setCvData(newData);
 
-    // Simulate AI response after short delay
     setTimeout(() => {
       const aiMsg: ChatMessage = {
         id: uid(),
@@ -146,7 +67,6 @@ const ChatToBuild = () => {
     <div className="grid lg:grid-cols-[3fr_2fr] gap-6 h-[calc(100vh-220px)] min-h-[500px]">
       {/* Chat panel */}
       <div className="flex flex-col bg-card rounded-2xl border border-border overflow-hidden">
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
           <AnimatePresence initial={false}>
             {messages.map((msg) => (
@@ -180,7 +100,6 @@ const ChatToBuild = () => {
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
         <div className="p-3 border-t border-border">
           <div className="flex gap-2">
             <input

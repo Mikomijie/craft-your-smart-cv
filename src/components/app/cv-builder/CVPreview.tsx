@@ -17,21 +17,29 @@ function calcCompleteness(data: CVData): number {
   return Math.min(score, 100);
 }
 
-const CVPreview = ({ data, onSave, showSave = false }: { data: CVData; onSave?: () => void; showSave?: boolean }) => {
+const CVPreview = ({ data, onSave, showSave = false, highlightedSections }: {
+  data: CVData;
+  onSave?: () => void;
+  showSave?: boolean;
+  highlightedSections?: string[];
+}) => {
   const { personal, experience, education, skills } = data;
   const completeness = calcCompleteness(data);
   const hasContent = personal.name || experience.length > 0 || education.length > 0 || skills.length > 0;
+  const isHighlighted = (section: string) => highlightedSections?.includes(section);
 
   return (
     <div className="flex flex-col h-full">
       {/* Progress bar */}
-      <div className="mb-4 space-y-1.5">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>CV Completeness</span>
-          <span className="font-semibold text-primary">{completeness}%</span>
+      {showSave && (
+        <div className="mb-4 space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>CV Completeness</span>
+            <span className="font-semibold text-primary">{completeness}%</span>
+          </div>
+          <Progress value={completeness} className="h-2" />
         </div>
-        <Progress value={completeness} className="h-2" />
-      </div>
+      )}
 
       {/* Preview content */}
       <div className="flex-1 bg-card rounded-2xl border border-border p-6 md:p-8 overflow-y-auto min-h-0">
@@ -43,7 +51,9 @@ const CVPreview = ({ data, onSave, showSave = false }: { data: CVData; onSave?: 
         ) : (
           <div className="space-y-5 text-sm">
             {personal.name && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="border-b border-border pb-4">
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+                className={`border-b border-border pb-4 ${isHighlighted("personal") ? "bg-primary/5 -mx-4 px-4 rounded-xl" : ""}`}
+              >
                 <h2 className="text-2xl font-bold tracking-tight">{personal.name}</h2>
                 {personal.title && <p className="text-primary font-medium mt-1">{personal.title}</p>}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-muted-foreground text-xs">
@@ -56,36 +66,58 @@ const CVPreview = ({ data, onSave, showSave = false }: { data: CVData; onSave?: 
               </motion.div>
             )}
             {experience.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}>
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
+                className={isHighlighted("experience") ? "bg-primary/5 -mx-4 px-4 py-2 rounded-xl" : ""}
+              >
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Experience</h3>
                 <div className="space-y-4">
                   {experience.map((e) => (
                     <div key={e.id}>
                       <div className="flex items-start justify-between">
-                        <div><p className="font-semibold">{e.role || "Untitled Role"}</p><p className="text-muted-foreground">{e.company}</p></div>
-                        {(e.startDate || e.endDate) && <span className="text-xs text-muted-foreground whitespace-nowrap">{e.startDate} — {e.endDate || "Present"}</span>}
+                        <div>
+                          {e.role && <p className="font-semibold">{e.role}</p>}
+                          {e.company && <p className="text-muted-foreground">{e.company}</p>}
+                        </div>
+                        {(e.startDate || e.endDate) && (
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {e.startDate ? `${e.startDate} — ` : ""}{e.endDate || "Present"}
+                          </span>
+                        )}
                       </div>
-                      {e.description && <p className="mt-1.5 text-foreground/70 leading-relaxed text-pretty">{e.description}</p>}
+                      {e.description && (
+                        <div className="mt-1.5 text-foreground/70 leading-relaxed text-pretty">
+                          {e.description.split("\n").map((line, i) => (
+                            <p key={i}>{line.startsWith("•") ? line : `• ${line}`}</p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </motion.div>
             )}
             {education.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}
+                className={isHighlighted("education") ? "bg-primary/5 -mx-4 px-4 py-2 rounded-xl" : ""}
+              >
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Education</h3>
                 <div className="space-y-3">
                   {education.map((e) => (
                     <div key={e.id} className="flex items-start justify-between">
-                      <div><p className="font-semibold">{e.degree || "Untitled"}</p><p className="text-muted-foreground">{e.school}</p></div>
-                      {(e.startDate || e.endDate) && <span className="text-xs text-muted-foreground whitespace-nowrap">{e.startDate} — {e.endDate || "Present"}</span>}
+                      <div>
+                        {e.degree && <p className="font-semibold">{e.degree}</p>}
+                        {e.school && <p className="text-muted-foreground">{e.school}</p>}
+                      </div>
+                      {e.endDate && <span className="text-xs text-muted-foreground whitespace-nowrap">{e.endDate}</span>}
                     </div>
                   ))}
                 </div>
               </motion.div>
             )}
             {skills.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }}>
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }}
+                className={isHighlighted("skills") ? "bg-primary/5 -mx-4 px-4 py-2 rounded-xl" : ""}
+              >
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Skills</h3>
                 <div className="flex flex-wrap gap-2">
                   {skills.map((s, i) => <span key={i} className="px-3 py-1 rounded-lg bg-primary/10 text-primary text-xs font-medium">{s}</span>)}
