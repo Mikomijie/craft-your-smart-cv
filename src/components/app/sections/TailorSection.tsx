@@ -431,9 +431,9 @@ const ResultsStep = ({
           <div className="flex-1 min-h-0 max-h-[500px] overflow-y-auto">
             <CVPreview data={tailoredCV} highlightedSections={showChanges ? ["personal", "experience"] : undefined} />
           </div>
-          <button className="mt-4 w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-2.5 rounded-xl text-sm font-semibold hover:brightness-110 transition-all">
-            <Download className="w-4 h-4" /> Download PDF
-          </button>
+          <div className="mt-4">
+            <CVPreview data={tailoredCV} showDownload previewId="tailored-cv-pdf" />
+          </div>
         </motion.div>
 
         {/* Column 3: Cover Letter */}

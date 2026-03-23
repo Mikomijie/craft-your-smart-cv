@@ -42,11 +42,16 @@ export function extractDataFromMessages(messages: ChatMessage[]): CVData {
     }
   }
 
+  // Auto-suggest skills based on job title and experience if none added
+  if (cv.skills.length === 0) {
+    const suggestedSkills = suggestSkillsFromRole(cv);
+    cv.skills = suggestedSkills;
+  }
+
   return cv;
 }
 
 function parseNameAndTitle(text: string, cv: CVData) {
-  // Try patterns like "I'm John Doe, looking for a Software Engineer role"
   const namePatterns = [
     /(?:i'?m|i am|my name is|name is|name:)\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
     /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/m,
@@ -56,7 +61,6 @@ function parseNameAndTitle(text: string, cv: CVData) {
     if (m) { cv.personal.name = m[1].trim(); break; }
   }
 
-  // Extract title/role
   const rolePatterns = [
     /(?:looking for|role|position|work as|want to be|i'?m an?|i am an?)\s+(?:a\s+)?(.+?)(?:\s+role|\s+position|\s+job|[.,!]|$)/i,
     /(?:as (?:a |an )?)([\w\s]+?)(?:\s+at|\s+for|[,.]|$)/i,
@@ -68,7 +72,6 @@ function parseNameAndTitle(text: string, cv: CVData) {
 }
 
 function parseExperience(text: string, cv: CVData) {
-  // "I worked as an AI Engineer at Crescent AI" or "AI Engineer at Crescent AI for 2 years"
   const patterns = [
     /(?:work(?:ed|ing)?|was|am)\s+(?:as\s+)?(?:an?\s+)?([\w\s/&-]+?)\s+(?:at|for|@)\s+([\w\s&.,'-]+?)(?:\s+(?:for|since|from|,)|[.!]|$)/i,
     /(?:at|@)\s+([\w\s&.,'-]+?)\s+(?:as|,)\s+(?:an?\s+)?([\w\s/&-]+?)(?:\s+(?:for|since|from)|[.!]|$)/i,
@@ -94,12 +97,10 @@ function parseExperience(text: string, cv: CVData) {
   const startDate = dateMatch?.[1] || "";
   const endDate = dateMatch?.[2] || "Present";
 
-  // Check for "current" indicators
   const isCurrent = /\b(currently|current|present|now|still)\b/i.test(text);
 
-  // Extract bullet points / responsibilities
-  const bullets = text.split(/[•\-\n;]/).map(s => s.trim()).filter(s => s.length > 15 && s.length < 200);
-  const description = bullets.length > 0 ? bullets.join("\n• ") : "";
+  // Extract only responsibilities/achievements — NOT the "I worked as X at Y" sentence
+  const description = extractResponsibilities(text);
 
   if (role || company) {
     cv.experience.push({
@@ -113,22 +114,51 @@ function parseExperience(text: string, cv: CVData) {
   }
 }
 
-function parseEducation(text: string, cv: CVData) {
-  // "University of Benin, computer science, finished with 4.88"
-  const uniPatterns = [
-    /(?:university|college|school|institute)\s+(?:of\s+)?[\w\s]+/i,
-    /(?:at|from|studied at)\s+([\w\s]+(?:university|college|institute|school)[\w\s]*)/i,
-  ];
+/**
+ * Extract only responsibility/achievement bullet points from text.
+ * Filters out the introductory "I worked as X at Y" type sentences.
+ */
+function extractResponsibilities(text: string): string {
+  // Split by common delimiters
+  const parts = text.split(/[•\-\n;]/).map(s => s.trim()).filter(s => s.length > 0);
 
+  // Filter out "I worked as..." / "I was a..." / "at Company" intro sentences
+  const introPattern = /^(?:i\s+(?:work(?:ed|ing)?|was|am)\s+(?:as\s+)?(?:an?\s+)?[\w\s/&-]+\s+(?:at|for|@)\s+[\w\s&.,'-]+|(?:at|@)\s+[\w\s&.,'-]+\s+(?:as|,)\s+[\w\s/&-]+)/i;
+
+  const responsibilities = parts.filter(part => {
+    // Skip short fragments
+    if (part.length < 15) return false;
+    // Skip if it's just the intro sentence about where they worked
+    if (introPattern.test(part)) return false;
+    // Skip sentences that are just "I worked at X" with no real responsibility info
+    if (/^i\s+(?:work(?:ed|ing)?|was|am)\b/i.test(part) && !/(?:responsible|managed|led|built|created|developed|designed|improved|increased|reduced|implemented|delivered|achieved)/i.test(part)) return false;
+    return true;
+  });
+
+  if (responsibilities.length === 0) return "";
+  return responsibilities.map(r => r.replace(/^[•\-\s]+/, "")).join("\n");
+}
+
+function parseEducation(text: string, cv: CVData) {
+  // Extract only the university/school name, not the full sentence
   let school = "";
-  const uniMatch = text.match(/(?:^|at\s+|from\s+|,\s*)((?:[\w]+\s+)*(?:university|college|institute|school)(?:\s+of\s+[\w\s]+)?)/i)
-    || text.match(/([\w\s]+(?:University|College|Institute|School)[\w\s]*)/i);
-  if (uniMatch) {
-    school = uniMatch[1].trim();
+
+  // Match specific university name patterns
+  const uniNameMatch = text.match(/((?:[\w]+\s+)*(?:University|College|Institute|School)(?:\s+of\s+[\w\s]+)?)/i);
+  if (uniNameMatch) {
+    school = uniNameMatch[1].trim();
   } else {
-    // Try first segment before comma
-    const firstSeg = text.split(/[,;]/)[0].trim();
-    if (firstSeg.length > 3 && firstSeg.length < 60) school = firstSeg;
+    // Try "at [School Name]" or "from [School Name]"
+    const atMatch = text.match(/(?:at|from)\s+([\w\s]+?)(?:[,;.]|\s+(?:studying|majoring|in|with|where|and))/i);
+    if (atMatch) {
+      school = atMatch[1].trim();
+    } else {
+      // Last resort: first segment before comma, only if it looks like a name
+      const firstSeg = text.split(/[,;]/)[0].trim();
+      if (firstSeg.length > 3 && firstSeg.length < 60 && /^[A-Z]/.test(firstSeg)) {
+        school = firstSeg;
+      }
+    }
   }
 
   // Degree extraction
@@ -139,7 +169,6 @@ function parseEducation(text: string, cv: CVData) {
     degree = degreeMatch[1].trim();
     field = degreeMatch[2]?.trim() || "";
   } else {
-    // Try to find field of study from common subjects
     const fieldMatch = text.match(/(?:computer science|engineering|mathematics|physics|business|economics|law|medicine|chemistry|biology|psychology|marketing|finance|accounting|design|arts|literature|philosophy|history)/i);
     if (fieldMatch) field = fieldMatch[0];
   }
@@ -186,7 +215,6 @@ function parseContact(text: string, cv: CVData) {
   const locMatch = text.match(/(?:location|based in|live in|from|in)\s+(.+?)(?:[,.]|$)/i);
   if (locMatch) cv.personal.location = locMatch[1].trim();
 
-  // Summary: remaining text
   let remaining = text;
   [emailMatch?.[0], phoneMatch?.[0], locMatch?.[0]].forEach(m => {
     if (m) remaining = remaining.replace(m, "");
@@ -196,7 +224,6 @@ function parseContact(text: string, cv: CVData) {
 }
 
 function inferAndParse(text: string, cv: CVData) {
-  // Try to detect what the text is about
   if (/(?:work|company|engineer|manager|developer|designer|at\s)/i.test(text)) {
     parseExperience(text, cv);
   } else if (/(?:university|college|degree|bachelor|master|studied|graduated)/i.test(text)) {
@@ -206,6 +233,45 @@ function inferAndParse(text: string, cv: CVData) {
   } else if (text.includes(",") && text.split(",").length >= 3) {
     parseSkills(text, cv);
   }
+}
+
+/**
+ * Auto-suggest skills based on the user's job title and experience companies.
+ */
+function suggestSkillsFromRole(cv: CVData): string[] {
+  const title = (cv.personal.title || "").toLowerCase();
+  const roles = cv.experience.map(e => e.role.toLowerCase()).join(" ");
+  const combined = `${title} ${roles}`;
+
+  const skillMap: Record<string, string[]> = {
+    "software engineer": ["JavaScript", "Python", "Git", "Problem Solving"],
+    "frontend": ["React", "TypeScript", "CSS", "Responsive Design"],
+    "backend": ["Node.js", "SQL", "REST APIs", "System Design"],
+    "fullstack": ["React", "Node.js", "TypeScript", "SQL"],
+    "full stack": ["React", "Node.js", "TypeScript", "SQL"],
+    "data scientist": ["Python", "Machine Learning", "SQL", "Data Analysis"],
+    "data analyst": ["SQL", "Excel", "Python", "Data Visualization"],
+    "ai engineer": ["Python", "Machine Learning", "Deep Learning", "TensorFlow"],
+    "machine learning": ["Python", "TensorFlow", "PyTorch", "Statistics"],
+    "product manager": ["Product Strategy", "Agile", "Stakeholder Management", "Data Analysis"],
+    "project manager": ["Project Planning", "Agile", "Risk Management", "Communication"],
+    "designer": ["Figma", "UI/UX Design", "Prototyping", "User Research"],
+    "ux": ["User Research", "Wireframing", "Figma", "Usability Testing"],
+    "devops": ["Docker", "Kubernetes", "CI/CD", "AWS"],
+    "marketing": ["Digital Marketing", "SEO", "Content Strategy", "Analytics"],
+    "sales": ["CRM", "Negotiation", "Lead Generation", "Communication"],
+  };
+
+  for (const [key, skills] of Object.entries(skillMap)) {
+    if (combined.includes(key)) return skills;
+  }
+
+  // Generic fallback if we have a title but no match
+  if (cv.personal.title) {
+    return ["Communication", "Problem Solving", "Team Collaboration", "Time Management"];
+  }
+
+  return [];
 }
 
 // Helpers
