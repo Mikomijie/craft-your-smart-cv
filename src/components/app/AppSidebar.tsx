@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, FolderOpen, PlusCircle, Target, Lightbulb } from "lucide-react";
+import { FileText, FolderOpen, PlusCircle, Target, Lightbulb, LogOut } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 
 const navItems = [
   { id: "my-cvs", label: "My CVs", icon: FolderOpen },
@@ -24,6 +26,8 @@ interface AppSidebarProps {
 
 const AppSidebar = ({ activeSection, onSectionChange }: AppSidebarProps) => {
   const [tipIndex, setTipIndex] = useState(0);
+  const { signOut, user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -32,9 +36,13 @@ const AppSidebar = ({ activeSection, onSectionChange }: AppSidebarProps) => {
     return () => clearInterval(interval);
   }, []);
 
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/");
+  };
+
   return (
     <aside className="hidden md:flex flex-col w-[280px] h-screen bg-card border-r border-border fixed left-0 top-0 z-30">
-      {/* Logo */}
       <Link to="/" className="flex items-center gap-2.5 px-6 py-5 border-b border-border">
         <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center">
           <FileText className="w-4 h-4 text-primary-foreground" />
@@ -42,7 +50,6 @@ const AppSidebar = ({ activeSection, onSectionChange }: AppSidebarProps) => {
         <span className="font-bold text-base tracking-tight">CraftCV</span>
       </Link>
 
-      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
           const isActive = activeSection === item.id;
@@ -59,7 +66,6 @@ const AppSidebar = ({ activeSection, onSectionChange }: AppSidebarProps) => {
                 }
               `}
             >
-              {/* Active indicator */}
               {isActive && (
                 <motion.div
                   layoutId="sidebar-active"
@@ -75,7 +81,7 @@ const AppSidebar = ({ activeSection, onSectionChange }: AppSidebarProps) => {
       </nav>
 
       {/* Tip Card */}
-      <div className="px-4 pb-5">
+      <div className="px-4 pb-3">
         <div className="rounded-xl bg-primary/5 border border-primary/10 p-4">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -95,6 +101,22 @@ const AppSidebar = ({ activeSection, onSectionChange }: AppSidebarProps) => {
               {tips[tipIndex]}
             </motion.p>
           </AnimatePresence>
+        </div>
+      </div>
+
+      {/* User + Sign Out */}
+      <div className="px-4 pb-5 border-t border-border pt-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground truncate max-w-[180px]">
+            {user?.email || ""}
+          </span>
+          <button
+            onClick={handleSignOut}
+            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
+            title="Sign out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </aside>
