@@ -134,8 +134,11 @@ const TailorSection = () => {
     }, 20);
   };
 
+  const cleanCoverLetterName = (n: string) =>
+    n.replace(/\s+\b(and|i|the|a|an|is|am|was|im|or|but|to|for|my|me|at|in)\s*$/i, "").trim();
+
   const generateCoverLetter = (cv: CVData, t: Tone) => {
-    const name = cv.personal.name || "Applicant";
+    const name = cleanCoverLetterName(cv.personal.name || "Applicant");
     const title = cv.personal.title || "professional";
     const company = "your company";
     const recentCompany = cv.experience[0]?.company || "";
