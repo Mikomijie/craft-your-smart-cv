@@ -107,7 +107,7 @@ const LandingPage = () => {
           transition={{ duration: 0.5, ease }}
         >
           <Link
-            to="/app"
+            to="/auth"
             className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 hover:brightness-110 active:scale-[0.97]"
           >
             Open App
