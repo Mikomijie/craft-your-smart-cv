@@ -160,7 +160,7 @@ const TailorSection = () => {
       ? `At ${cv.experience[0].company || "my previous role"}, I ${cv.experience[0].description ? "excelled in " + cv.experience[0].description.slice(0, 80) : "drove significant results"}.`
       : "";
 
-    return `${intros[t]}\n\nThroughout my career, I have consistently demonstrated the ability to deliver high-quality results. ${expSentence}\n\nI would welcome the opportunity to discuss how my skills and experience align with your needs.\n\nBest regards,\n${name}`;
+    return `${intros[t]}\n\nThroughout my career, I have consistently demonstrated the ability to deliver high-quality results. ${expSentence}\n\nI would welcome the opportunity to discuss how my skills and experience align with your needs.\n\nBest regards,\n${cleanCoverLetterName(name)}`;
   };
 
   const handleToneChange = (t: Tone) => {
