@@ -36,30 +36,155 @@ function loadHtml2Pdf(): Promise<void> {
   });
 }
 
+/** Strip trailing noise words from name for PDF/cover letter */
+function cleanNameForOutput(name: string): string {
+  return name
+    .replace(/\s+\b(and|i|the|a|an|is|am|was|im|or|but|to|for|my|me|at|in)\s*$/i, "")
+    .trim();
+}
+
 function getFileName(data: CVData): string {
-  const name = data.personal.name?.trim();
-  if (name) {
-    return `${name} - CraftCV.pdf`;
-  }
+  const name = cleanNameForOutput(data.personal.name?.trim() || "");
+  if (name) return `${name} - CraftCV.pdf`;
   return "CraftCV.pdf";
 }
 
-const handleDownloadPDF = async (data: CVData, elementId: string) => {
+/** Build a pure HTML string with inline styles for reliable PDF rendering */
+function buildPdfHtml(data: CVData): string {
+  const { personal, experience, education, skills } = data;
+  const name = cleanNameForOutput(personal.name || "");
+
+  const sectionHeader = (title: string) =>
+    `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#2563eb;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #e5e7eb;">${title}</div>`;
+
+  // Contact info line
+  const contactParts: string[] = [];
+  if (personal.email) contactParts.push(`<span style="font-size:11px;color:#555;">${personal.email}</span>`);
+  if (personal.phone) contactParts.push(`<span style="font-size:11px;color:#555;">${personal.phone}</span>`);
+  if (personal.location) contactParts.push(`<span style="font-size:11px;color:#555;">${personal.location}</span>`);
+  if (personal.website) contactParts.push(`<span style="font-size:11px;color:#555;">${personal.website}</span>`);
+
+  // Experience HTML
+  let expHtml = "";
+  if (experience.length > 0) {
+    expHtml = sectionHeader("Experience");
+    for (const e of experience) {
+      expHtml += `<div style="margin-bottom:12px;">`;
+      expHtml += `<div style="display:flex;justify-content:space-between;align-items:baseline;">`;
+      expHtml += `<div>`;
+      if (e.role) expHtml += `<div style="font-size:13px;font-weight:700;color:#111;">${e.role}</div>`;
+      if (e.company) expHtml += `<div style="font-size:12px;color:#666;">${e.company}</div>`;
+      expHtml += `</div>`;
+      if (e.startDate || e.endDate) {
+        expHtml += `<div style="font-size:10px;color:#888;white-space:nowrap;">${e.startDate ? e.startDate + " — " : ""}${e.endDate || "Present"}</div>`;
+      }
+      expHtml += `</div>`;
+      if (e.description) {
+        const bullets = e.description.split("\n").filter(l => l.trim());
+        for (const b of bullets) {
+          const bulletText = b.startsWith("•") ? b : `• ${b}`;
+          expHtml += `<div style="font-size:11px;color:#444;margin-top:3px;padding-left:8px;">${bulletText}</div>`;
+        }
+      }
+      expHtml += `</div>`;
+    }
+  }
+
+  // Education HTML
+  let eduHtml = "";
+  if (education.length > 0) {
+    eduHtml = sectionHeader("Education");
+    for (const e of education) {
+      eduHtml += `<div style="margin-bottom:8px;">`;
+      if (e.degree) eduHtml += `<div style="font-size:12px;font-weight:700;color:#111;">${e.degree}</div>`;
+      if (e.school) eduHtml += `<div style="font-size:11px;color:#666;">${e.school}</div>`;
+      if (e.endDate) eduHtml += `<div style="font-size:10px;color:#888;">${e.endDate}</div>`;
+      eduHtml += `</div>`;
+    }
+  }
+
+  // Skills HTML
+  let skillsHtml = "";
+  if (skills.length > 0) {
+    skillsHtml = sectionHeader("Skills");
+    skillsHtml += `<div style="display:flex;flex-wrap:wrap;gap:5px;">`;
+    for (const s of skills) {
+      skillsHtml += `<span style="display:inline-block;padding:3px 10px;background:#eff6ff;color:#2563eb;font-size:10px;font-weight:600;border-radius:6px;">${s}</span>`;
+    }
+    skillsHtml += `</div>`;
+  }
+
+  // Contact sidebar
+  let contactSidebar = "";
+  if (contactParts.length > 0 || personal.location) {
+    contactSidebar = sectionHeader("Contact");
+    if (personal.email) contactSidebar += `<div style="font-size:11px;color:#444;margin-bottom:4px;">📧 ${personal.email}</div>`;
+    if (personal.phone) contactSidebar += `<div style="font-size:11px;color:#444;margin-bottom:4px;">📱 ${personal.phone}</div>`;
+    if (personal.location) contactSidebar += `<div style="font-size:11px;color:#444;margin-bottom:4px;">📍 ${personal.location}</div>`;
+    if (personal.website) contactSidebar += `<div style="font-size:11px;color:#444;margin-bottom:4px;">🌐 ${personal.website}</div>`;
+  }
+
+  return `
+<div style="font-family:Arial,Helvetica,sans-serif;color:#111;background:#fff;padding:0;margin:0;width:100%;box-sizing:border-box;">
+  <!-- Header -->
+  <div style="margin-bottom:16px;">
+    <div style="font-size:24px;font-weight:800;color:#111;margin-bottom:2px;">${name || "Your Name"}</div>
+    ${personal.title ? `<div style="font-size:14px;color:#2563eb;font-weight:600;margin-bottom:8px;">${personal.title}</div>` : ""}
+    ${contactParts.length > 0 ? `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px;">${contactParts.join("")}</div>` : ""}
+    <div style="height:2px;background:linear-gradient(90deg,#2563eb,#818cf8);border-radius:2px;"></div>
+  </div>
+
+  ${personal.summary ? `<div style="font-size:11px;color:#444;line-height:1.6;margin-bottom:16px;">${personal.summary}</div>` : ""}
+
+  <!-- Two columns -->
+  <div style="display:flex;gap:24px;">
+    <!-- Left column: 65% -->
+    <div style="flex:0 0 65%;max-width:65%;">
+      ${expHtml}
+      ${eduHtml}
+    </div>
+    <!-- Right column: 33% -->
+    <div style="flex:0 0 33%;max-width:33%;">
+      ${skillsHtml}
+      ${contactSidebar ? `<div style="margin-top:16px;">${contactSidebar}</div>` : ""}
+    </div>
+  </div>
+</div>`;
+}
+
+const handleDownloadPDF = async (data: CVData) => {
   try {
+    const htmlContent = buildPdfHtml(data);
+    // Verify we have actual content
+    if (!data.personal.name && data.experience.length === 0 && data.skills.length === 0) {
+      toast.error("CV is empty — add some content first");
+      return;
+    }
+
     toast.loading("Generating PDF...", { id: "pdf-gen" });
     await loadHtml2Pdf();
-    const element = document.getElementById(elementId);
-    if (!element) throw new Error("CV element not found");
+
+    // Create a temporary container with the HTML string
+    const container = document.createElement("div");
+    container.innerHTML = htmlContent;
+    container.style.position = "absolute";
+    container.style.left = "-9999px";
+    container.style.top = "0";
+    container.style.width = "210mm"; // A4 width
+    document.body.appendChild(container);
 
     const opt = {
-      margin: [10, 10, 10, 10],
+      margin: [18, 18, 18, 18],
       filename: getFileName(data),
       image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true, width: container.scrollWidth },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
     };
 
-    await window.html2pdf().set(opt).from(element).save();
+    await window.html2pdf().set(opt).from(container).save();
+
+    // Cleanup
+    document.body.removeChild(container);
     toast.success("PDF downloaded!", { id: "pdf-gen" });
   } catch (err) {
     console.error(err);
@@ -83,7 +208,6 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
 
   return (
     <div className="flex flex-col h-full">
-      {/* Progress bar */}
       {showSave && (
         <div className="mb-4 space-y-1.5">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -94,7 +218,6 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
         </div>
       )}
 
-      {/* Preview content */}
       <div className="flex-1 bg-card rounded-2xl border border-border p-6 md:p-8 overflow-y-auto min-h-0">
         {!hasContent ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-20">
@@ -107,7 +230,7 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
                 className={`border-b border-border pb-4 ${isHighlighted("personal") ? "bg-primary/5 -mx-4 px-4 rounded-xl" : ""}`}
               >
-                <h2 className="text-2xl font-bold tracking-tight">{personal.name}</h2>
+                <h2 className="text-2xl font-bold tracking-tight">{cleanNameForOutput(personal.name)}</h2>
                 {personal.title && <p className="text-primary font-medium mt-1">{personal.title}</p>}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-muted-foreground text-xs">
                   {personal.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{personal.email}</span>}
@@ -181,17 +304,15 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
         )}
       </div>
 
-      {/* Download PDF button */}
       {showDownload && hasContent && (
         <button
-          onClick={() => handleDownloadPDF(data, elId)}
+          onClick={() => handleDownloadPDF(data)}
           className="mt-4 w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-3 rounded-xl text-sm font-semibold transition-all duration-300 hover:brightness-110 active:scale-[0.97]"
         >
           <Download className="w-4 h-4" /> Download PDF
         </button>
       )}
 
-      {/* Save button */}
       {showSave && completeness >= 60 && onSave && (
         <motion.button
           initial={{ opacity: 0, scale: 0.9 }}

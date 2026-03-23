@@ -134,8 +134,11 @@ const TailorSection = () => {
     }, 20);
   };
 
+  const cleanCoverLetterName = (n: string) =>
+    n.replace(/\s+\b(and|i|the|a|an|is|am|was|im|or|but|to|for|my|me|at|in)\s*$/i, "").trim();
+
   const generateCoverLetter = (cv: CVData, t: Tone) => {
-    const name = cv.personal.name || "Applicant";
+    const name = cleanCoverLetterName(cv.personal.name || "Applicant");
     const title = cv.personal.title || "professional";
     const company = "your company";
     const recentCompany = cv.experience[0]?.company || "";
@@ -157,7 +160,7 @@ const TailorSection = () => {
       ? `At ${cv.experience[0].company || "my previous role"}, I ${cv.experience[0].description ? "excelled in " + cv.experience[0].description.slice(0, 80) : "drove significant results"}.`
       : "";
 
-    return `${intros[t]}\n\nThroughout my career, I have consistently demonstrated the ability to deliver high-quality results. ${expSentence}\n\nI would welcome the opportunity to discuss how my skills and experience align with your needs.\n\nBest regards,\n${name}`;
+    return `${intros[t]}\n\nThroughout my career, I have consistently demonstrated the ability to deliver high-quality results. ${expSentence}\n\nI would welcome the opportunity to discuss how my skills and experience align with your needs.\n\nBest regards,\n${cleanCoverLetterName(name)}`;
   };
 
   const handleToneChange = (t: Tone) => {
@@ -429,10 +432,7 @@ const ResultsStep = ({
             </button>
           </div>
           <div className="flex-1 min-h-0 max-h-[500px] overflow-y-auto">
-            <CVPreview data={tailoredCV} highlightedSections={showChanges ? ["personal", "experience"] : undefined} />
-          </div>
-          <div className="mt-4">
-            <CVPreview data={tailoredCV} showDownload previewId="tailored-cv-pdf" />
+            <CVPreview data={tailoredCV} showDownload highlightedSections={showChanges ? ["personal", "experience"] : undefined} />
           </div>
         </motion.div>
 
