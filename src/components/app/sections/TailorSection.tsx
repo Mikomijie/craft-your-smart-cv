@@ -138,16 +138,26 @@ const TailorSection = () => {
     const name = cv.personal.name || "Applicant";
     const title = cv.personal.title || "professional";
     const company = "your company";
-    const skills = cv.skills.slice(0, 5).join(", ");
+    const recentCompany = cv.experience[0]?.company || "";
+    
+    // Use skills if available, otherwise fall back to title and company
+    const skillsList = cv.skills.filter(s => s.trim().length > 0);
+    const expertiseText = skillsList.length > 0
+      ? skillsList.slice(0, 5).join(", ")
+      : [title, recentCompany].filter(Boolean).join(" at ");
 
     const intros: Record<Tone, string> = {
-      Professional: `Dear Hiring Manager,\n\nI am writing to express my strong interest in the position at ${company}. As a ${title} with demonstrated expertise in ${skills}, I am confident in my ability to contribute meaningfully to your team.`,
-      Warm: `Dear Hiring Manager,\n\nI was thrilled to come across this opportunity at ${company}. As a passionate ${title} who loves working with ${skills}, I believe this role is a perfect match for my experience and enthusiasm.`,
-      Bold: `Dear Hiring Manager,\n\nLet me be direct — I'm exactly the ${title} you're looking for. With deep expertise in ${skills} and a track record of delivering results, I'm ready to make an immediate impact at ${company}.`,
-      Concise: `Dear Hiring Manager,\n\nI'm applying for the ${title} role. My background: ${skills}. I deliver results and I'd like to do that for ${company}.`,
+      Professional: `Dear Hiring Manager,\n\nI am writing to express my strong interest in the position at ${company}. As a ${title} with demonstrated expertise in ${expertiseText}, I am confident in my ability to contribute meaningfully to your team.`,
+      Warm: `Dear Hiring Manager,\n\nI was thrilled to come across this opportunity at ${company}. As a passionate ${title} who loves working with ${expertiseText}, I believe this role is a perfect match for my experience and enthusiasm.`,
+      Bold: `Dear Hiring Manager,\n\nLet me be direct — I'm exactly the ${title} you're looking for. With deep expertise in ${expertiseText} and a track record of delivering results, I'm ready to make an immediate impact at ${company}.`,
+      Concise: `Dear Hiring Manager,\n\nI'm applying for the ${title} role. My background: ${expertiseText}. I deliver results and I'd like to do that for ${company}.`,
     };
 
-    return `${intros[t]}\n\nThroughout my career, I have consistently demonstrated the ability to deliver high-quality results. ${cv.experience[0] ? `At ${cv.experience[0].company || "my previous role"}, I ${cv.experience[0].description ? "excelled in " + cv.experience[0].description.slice(0, 80) : "drove significant results"}.` : ""}\n\nI would welcome the opportunity to discuss how my skills and experience align with your needs.\n\nBest regards,\n${name}`;
+    const expSentence = cv.experience[0]
+      ? `At ${cv.experience[0].company || "my previous role"}, I ${cv.experience[0].description ? "excelled in " + cv.experience[0].description.slice(0, 80) : "drove significant results"}.`
+      : "";
+
+    return `${intros[t]}\n\nThroughout my career, I have consistently demonstrated the ability to deliver high-quality results. ${expSentence}\n\nI would welcome the opportunity to discuss how my skills and experience align with your needs.\n\nBest regards,\n${name}`;
   };
 
   const handleToneChange = (t: Tone) => {
