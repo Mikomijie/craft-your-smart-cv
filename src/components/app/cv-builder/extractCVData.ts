@@ -8,7 +8,6 @@ import { defaultCV, uid } from "./types";
 export function extractDataFromMessages(messages: ChatMessage[]): CVData {
   const cv: CVData = JSON.parse(JSON.stringify(defaultCV));
 
-  // Walk through messages in order, pairing each user reply with the preceding assistant prompt
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
     if (msg.role !== "user") continue;
@@ -19,7 +18,6 @@ export function extractDataFromMessages(messages: ChatMessage[]): CVData {
       .reverse()
       .find((m) => m.role === "assistant")?.content.toLowerCase() || "";
 
-    // Determine topic from the assistant question
     const isNameTopic = prevAssistant.includes("name") || prevAssistant.includes("role") || prevAssistant.includes("let's start");
     const isExpTopic = prevAssistant.includes("experience") || prevAssistant.includes("work") || prevAssistant.includes("company");
     const isEduTopic = prevAssistant.includes("education") || prevAssistant.includes("study") || prevAssistant.includes("degree") || prevAssistant.includes("university");
@@ -37,7 +35,6 @@ export function extractDataFromMessages(messages: ChatMessage[]): CVData {
     } else if (isContactTopic) {
       parseContact(text, cv);
     } else {
-      // Fallback: try to detect content type
       inferAndParse(text, cv);
     }
   }
@@ -51,14 +48,68 @@ export function extractDataFromMessages(messages: ChatMessage[]): CVData {
   return cv;
 }
 
+// ── Common abbreviation map ──
+const ABBREVIATIONS: Record<string, string> = {
+  ai: "AI", ml: "ML", ui: "UI", ux: "UX", hr: "HR",
+  qa: "QA", it: "IT", vp: "VP", cto: "CTO", ceo: "CEO",
+  cfo: "CFO", coo: "COO", seo: "SEO", api: "API", sql: "SQL",
+  aws: "AWS", ios: "iOS", devops: "DevOps",
+};
+
+// ── Typo / abbreviation → full title map ──
+const TITLE_ALIASES: Record<string, string> = {
+  "ai engr": "AI Engineer",
+  "ai eng": "AI Engineer",
+  "software dev": "Software Developer",
+  "frontend dev": "Frontend Developer",
+  "backend dev": "Backend Developer",
+  "fullstack dev": "Fullstack Developer",
+  "full stack dev": "Fullstack Developer",
+  "sw engineer": "Software Engineer",
+  "sw dev": "Software Developer",
+  "swe": "Software Engineer",
+  "fe dev": "Frontend Developer",
+  "be dev": "Backend Developer",
+  "ml engr": "ML Engineer",
+  "ml eng": "ML Engineer",
+  "data eng": "Data Engineer",
+  "data engr": "Data Engineer",
+  "prod manager": "Product Manager",
+  "proj manager": "Project Manager",
+  "sys admin": "System Administrator",
+  "sysadmin": "System Administrator",
+};
+
+/** Strip trailing noise words from parsed names */
+function cleanName(name: string): string {
+  return name
+    .replace(/\s+\b(and|i|the|a|an|is|am|was|im|or|but|to|for|my|me|at|in)\s*$/i, "")
+    .replace(/\s+$/, "")
+    .trim();
+}
+
+/** Properly capitalize a job title, handling abbreviations */
+function smartCapitalizeTitle(raw: string): string {
+  // First check alias map for typos/abbreviations
+  const lower = raw.toLowerCase().trim();
+  if (TITLE_ALIASES[lower]) return TITLE_ALIASES[lower];
+
+  // Capitalize each word, with special handling for abbreviations
+  return lower.split(/\s+/).map(word => {
+    const abbr = ABBREVIATIONS[word.toLowerCase()];
+    if (abbr) return abbr;
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }).join(" ");
+}
+
 function parseNameAndTitle(text: string, cv: CVData) {
   const namePatterns = [
-    /(?:i'?m|i am|my name is|name is|name:)\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-    /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/m,
+    /(?:i'?m|i am|my name is|name is|name:)\s*([A-Z][a-z]+(?:\s+[A-Za-z][a-z]+)+)/i,
+    /^([A-Z][a-z]+(?:\s+[A-Za-z][a-z]+)+)/m,
   ];
   for (const p of namePatterns) {
     const m = text.match(p);
-    if (m) { cv.personal.name = m[1].trim(); break; }
+    if (m) { cv.personal.name = cleanName(m[1].trim()); break; }
   }
 
   const rolePatterns = [
@@ -67,7 +118,10 @@ function parseNameAndTitle(text: string, cv: CVData) {
   ];
   for (const p of rolePatterns) {
     const m = text.match(p);
-    if (m && m[1].trim().length > 2) { cv.personal.title = m[1].trim(); break; }
+    if (m && m[1].trim().length > 2) {
+      cv.personal.title = smartCapitalizeTitle(m[1].trim());
+      break;
+    }
   }
 }
 
@@ -92,21 +146,18 @@ function parseExperience(text: string, cv: CVData) {
     }
   }
 
-  // Date extraction
   const dateMatch = text.match(/(?:from|since)\s+(\w+\s*\d{4})\s*(?:to|-|–)\s*(\w+\s*\d{4}|present|now|current)/i);
   const startDate = dateMatch?.[1] || "";
   const endDate = dateMatch?.[2] || "Present";
-
   const isCurrent = /\b(currently|current|present|now|still)\b/i.test(text);
 
-  // Extract only responsibilities/achievements — NOT the "I worked as X at Y" sentence
   const description = extractResponsibilities(text);
 
   if (role || company) {
     cv.experience.push({
       id: uid(),
       company: cleanTrailing(company),
-      role: capitalizeRole(cleanTrailing(role)),
+      role: smartCapitalizeTitle(cleanTrailing(role)),
       startDate,
       endDate: isCurrent ? "Present" : endDate,
       description,
@@ -114,23 +165,13 @@ function parseExperience(text: string, cv: CVData) {
   }
 }
 
-/**
- * Extract only responsibility/achievement bullet points from text.
- * Filters out the introductory "I worked as X at Y" type sentences.
- */
 function extractResponsibilities(text: string): string {
-  // Split by common delimiters
   const parts = text.split(/[•\-\n;]/).map(s => s.trim()).filter(s => s.length > 0);
-
-  // Filter out "I worked as..." / "I was a..." / "at Company" intro sentences
   const introPattern = /^(?:i\s+(?:work(?:ed|ing)?|was|am)\s+(?:as\s+)?(?:an?\s+)?[\w\s/&-]+\s+(?:at|for|@)\s+[\w\s&.,'-]+|(?:at|@)\s+[\w\s&.,'-]+\s+(?:as|,)\s+[\w\s/&-]+)/i;
 
   const responsibilities = parts.filter(part => {
-    // Skip short fragments
     if (part.length < 15) return false;
-    // Skip if it's just the intro sentence about where they worked
     if (introPattern.test(part)) return false;
-    // Skip sentences that are just "I worked at X" with no real responsibility info
     if (/^i\s+(?:work(?:ed|ing)?|was|am)\b/i.test(part) && !/(?:responsible|managed|led|built|created|developed|designed|improved|increased|reduced|implemented|delivered|achieved)/i.test(part)) return false;
     return true;
   });
@@ -140,28 +181,23 @@ function extractResponsibilities(text: string): string {
 }
 
 function parseEducation(text: string, cv: CVData) {
-  // Extract only the university/school name, not the full sentence
   let school = "";
 
-  // Match specific university name patterns
   const uniNameMatch = text.match(/((?:[\w]+\s+)*(?:University|College|Institute|School)(?:\s+of\s+[\w\s]+)?)/i);
   if (uniNameMatch) {
-    school = uniNameMatch[1].trim();
+    school = capitalizeLocation(uniNameMatch[1].trim());
   } else {
-    // Try "at [School Name]" or "from [School Name]"
     const atMatch = text.match(/(?:at|from)\s+([\w\s]+?)(?:[,;.]|\s+(?:studying|majoring|in|with|where|and))/i);
     if (atMatch) {
-      school = atMatch[1].trim();
+      school = capitalizeLocation(atMatch[1].trim());
     } else {
-      // Last resort: first segment before comma, only if it looks like a name
       const firstSeg = text.split(/[,;]/)[0].trim();
       if (firstSeg.length > 3 && firstSeg.length < 60 && /^[A-Z]/.test(firstSeg)) {
-        school = firstSeg;
+        school = capitalizeLocation(firstSeg);
       }
     }
   }
 
-  // Degree extraction
   const degreeMatch = text.match(/\b(b\.?s\.?c?\.?|m\.?s\.?c?\.?|bachelor'?s?|master'?s?|ph\.?d\.?|diploma|associate'?s?)\s*(?:in\s+|of\s+)?([\w\s]+?)(?:[,;.]|$)/i);
   let degree = "";
   let field = "";
@@ -173,19 +209,17 @@ function parseEducation(text: string, cv: CVData) {
     if (fieldMatch) field = fieldMatch[0];
   }
 
-  // GPA / grade extraction
   const gpaMatch = text.match(/(\d\.\d{1,2})\s*(?:gpa|cgpa|grade)?/i)
     || text.match(/(?:gpa|cgpa|grade|finished with|graduated with)\s*[:.]?\s*(\d\.\d{1,2})/i);
   const gpa = gpaMatch ? gpaMatch[1] : "";
 
-  // Year extraction
   const yearMatch = text.match(/\b(20\d{2}|19\d{2})\b/);
   const endDate = yearMatch ? yearMatch[1] : "";
 
   if (school || degree || field) {
     const fullDegree = degree && field
-      ? `${normalizeDegree(degree)} ${field}`
-      : degree || (field ? `BSc ${field}` : "");
+      ? `${normalizeDegree(degree)} ${capitalizeLocation(field)}`
+      : degree || (field ? `BSc ${capitalizeLocation(field)}` : "");
 
     cv.education.push({
       id: uid(),
@@ -206,14 +240,30 @@ function parseSkills(text: string, cv: CVData) {
 }
 
 function parseContact(text: string, cv: CVData) {
-  const emailMatch = text.match(/[\w.-]+@[\w.-]+\.\w+/);
-  if (emailMatch) cv.personal.email = emailMatch[0];
+  // Fix email: remove spaces before @ symbol
+  const emailMatch = text.match(/[\w.\s-]+@[\w.-]+\.\w+/);
+  if (emailMatch) {
+    cv.personal.email = emailMatch[0].replace(/\s+/g, "");
+  }
 
   const phoneMatch = text.match(/[\d+][\d\s()-]{6,}/);
   if (phoneMatch) cv.personal.phone = phoneMatch[0].trim();
 
   const locMatch = text.match(/(?:location|based in|live in|from|in)\s+(.+?)(?:[,.]|$)/i);
-  if (locMatch) cv.personal.location = locMatch[1].trim();
+  if (locMatch) cv.personal.location = formatLocation(locMatch[1].trim());
+
+  // Also try to extract location from standalone text like "benin nigeria"
+  if (!cv.personal.location) {
+    const standaloneLocMatch = text.match(/\b([a-zA-Z]+)\s+([a-zA-Z]+)\b/);
+    if (standaloneLocMatch && !emailMatch && !phoneMatch) {
+      // Check if it looks like a location (2 words, no email/phone)
+      const word1 = standaloneLocMatch[1].toLowerCase();
+      const word2 = standaloneLocMatch[2].toLowerCase();
+      if (!["my", "is", "am", "the", "and", "or"].includes(word1)) {
+        cv.personal.location = formatLocation(`${word1} ${word2}`);
+      }
+    }
+  }
 
   let remaining = text;
   [emailMatch?.[0], phoneMatch?.[0], locMatch?.[0]].forEach(m => {
@@ -221,6 +271,15 @@ function parseContact(text: string, cv: CVData) {
   });
   remaining = remaining.replace(/\b(email|phone|location|based|live)\b/gi, "").trim();
   if (remaining.length > 20) cv.personal.summary = remaining;
+}
+
+/** Format location: "benin nigeria" → "Benin, Nigeria" */
+function formatLocation(loc: string): string {
+  const words = loc.trim().split(/\s+/);
+  if (words.length === 2 && !loc.includes(",")) {
+    return words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(", ");
+  }
+  return capitalizeLocation(loc);
 }
 
 function inferAndParse(text: string, cv: CVData) {
@@ -235,9 +294,6 @@ function inferAndParse(text: string, cv: CVData) {
   }
 }
 
-/**
- * Auto-suggest skills based on the user's job title and experience companies.
- */
 function suggestSkillsFromRole(cv: CVData): string[] {
   const title = (cv.personal.title || "").toLowerCase();
   const roles = cv.experience.map(e => e.role.toLowerCase()).join(" ");
@@ -266,7 +322,6 @@ function suggestSkillsFromRole(cv: CVData): string[] {
     if (combined.includes(key)) return skills;
   }
 
-  // Generic fallback if we have a title but no match
   if (cv.personal.title) {
     return ["Communication", "Problem Solving", "Team Collaboration", "Time Management"];
   }
@@ -276,10 +331,10 @@ function suggestSkillsFromRole(cv: CVData): string[] {
 
 // Helpers
 function cleanTrailing(s: string): string {
-  return s.replace(/[\s,;.]+$/, "").trim();
+  return s.replace(/[\s,;.]+$/, "").replace(/\s+\b(and|i|the|a|an)\s*$/i, "").trim();
 }
 
-function capitalizeRole(s: string): string {
+function capitalizeLocation(s: string): string {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 

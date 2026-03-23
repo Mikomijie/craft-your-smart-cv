@@ -432,10 +432,7 @@ const ResultsStep = ({
             </button>
           </div>
           <div className="flex-1 min-h-0 max-h-[500px] overflow-y-auto">
-            <CVPreview data={tailoredCV} highlightedSections={showChanges ? ["personal", "experience"] : undefined} />
-          </div>
-          <div className="mt-4">
-            <CVPreview data={tailoredCV} showDownload previewId="tailored-cv-pdf" />
+            <CVPreview data={tailoredCV} showDownload highlightedSections={showChanges ? ["personal", "experience"] : undefined} />
           </div>
         </motion.div>
 
