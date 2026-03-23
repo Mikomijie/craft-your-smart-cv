@@ -107,7 +107,7 @@ const LandingPage = () => {
           transition={{ duration: 0.5, ease }}
         >
           <Link
-            to="/app"
+            to="/auth"
             className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 hover:brightness-110 active:scale-[0.97]"
           >
             Open App
@@ -146,7 +146,7 @@ const LandingPage = () => {
           className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4"
         >
           <Link
-            to="/app"
+            to="/auth"
             className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-8 py-3.5 rounded-xl text-base font-semibold transition-all duration-300 hover:brightness-110 active:scale-[0.97] shadow-[0_0_40px_hsl(221_83%_53%/0.25)]"
           >
             Get Started Free
