@@ -1,67 +1,226 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Bot, User } from "lucide-react";
+import { Send, Bot, User, Loader2 } from "lucide-react";
 import CVPreview from "./CVPreview";
 import type { CVData, ChatMessage } from "./types";
 import { defaultCV, uid } from "./types";
-import { extractDataFromMessages } from "./extractCVData";
 import { toast } from "sonner";
+
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cv-chat`;
 
 const INITIAL_MSG: ChatMessage = {
   id: "init",
   role: "assistant",
-  content: "Hey! I'm going to help you build an amazing CV. Let's start simple — what's your name and what kind of role are you looking for?",
+  content:
+    "Hey! I'm going to help you build an amazing CV. Let's start simple — what's your name and what kind of role are you looking for?",
 };
 
-const FOLLOW_UPS: string[] = [
-  "Great! Now tell me about your most recent work experience — company, role, and what you did there.",
-  "Awesome. Do you have any more work experience to add? If not, just say 'no' and we'll move on to education.",
-  "What about your education? Where did you study, what degree, and your grade/GPA if you'd like to include it?",
-  "Almost there! List some of your key skills — things like programming languages, tools, or soft skills.",
-  "Your CV is looking solid! Add your email, phone, and location so employers can reach you. You can also write a short professional summary.",
-  "Looking great! You can keep adding details or save your CV when you're ready.",
-];
+/** Extract cv-data JSON from the AI message */
+function extractCvData(text: string): CVData | null {
+  const match = text.match(/```cv-data\s*\n([\s\S]*?)```/);
+  if (!match) return null;
+  try {
+    const raw = JSON.parse(match[1]);
+    // Ensure all fields exist with defaults
+    return {
+      personal: { ...defaultCV.personal, ...raw.personal },
+      experience: (raw.experience || []).map((e: any, i: number) => ({
+        id: `exp-${i}`,
+        company: e.company || "",
+        role: e.role || "",
+        startDate: e.startDate || "",
+        endDate: e.endDate || "Present",
+        description: e.description || "",
+      })),
+      education: (raw.education || []).map((e: any, i: number) => ({
+        id: `edu-${i}`,
+        school: e.school || "",
+        degree: e.degree || "",
+        startDate: e.startDate || "",
+        endDate: e.endDate || "",
+      })),
+      skills: raw.skills || [],
+      projects: (raw.projects || []).map((p: any, i: number) => ({
+        id: `proj-${i}`,
+        name: p.name || "",
+        description: p.description || "",
+        techStack: p.techStack || [],
+        link: p.link || "",
+      })),
+      certifications: (raw.certifications || []).map((c: any, i: number) => ({
+        id: `cert-${i}`,
+        name: c.name || "",
+        issuer: c.issuer || "",
+        date: c.date || "",
+      })),
+      extracurriculars: raw.extracurriculars || [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Strip the cv-data block from displayed message */
+function stripCvDataBlock(text: string): string {
+  return text.replace(/```cv-data\s*\n[\s\S]*?```/g, "").trim();
+}
 
 const ChatToBuild = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MSG]);
   const [input, setInput] = useState("");
   const [cvData, setCvData] = useState<CVData>(defaultCV);
-  const [followUpIdx, setFollowUpIdx] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendMessage = () => {
+  const sendMessage = useCallback(async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text || isLoading) return;
 
     const userMsg: ChatMessage = { id: uid(), role: "user", content: text };
-    const updated = [...messages, userMsg];
-    setMessages(updated);
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
     setInput("");
+    setIsLoading(true);
 
-    const newData = extractDataFromMessages(updated);
-    setCvData(newData);
+    // Build API messages (strip cv-data blocks from history so AI gets clean context)
+    const apiMessages = updatedMessages
+      .filter((m) => m.id !== "init" || m.role === "assistant")
+      .map((m) => ({
+        role: m.role,
+        content: m.role === "assistant" ? stripCvDataBlock(m.content) : m.content,
+      }));
 
-    setTimeout(() => {
-      const aiMsg: ChatMessage = {
-        id: uid(),
-        role: "assistant",
-        content: FOLLOW_UPS[Math.min(followUpIdx, FOLLOW_UPS.length - 1)],
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-      setFollowUpIdx((i) => i + 1);
-    }, 800);
-  };
+    // If this is the first user message, include the initial greeting as context
+    if (updatedMessages.length === 2) {
+      apiMessages.unshift({ role: "assistant", content: INITIAL_MSG.content });
+    }
+
+    let assistantContent = "";
+    const assistantId = uid();
+
+    try {
+      const resp = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ messages: apiMessages }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `Request failed (${resp.status})`);
+      }
+
+      if (!resp.body) throw new Error("No response body");
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = "";
+      let streamDone = false;
+
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (line.startsWith(":") || line.trim() === "") continue;
+          if (!line.startsWith("data: ")) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") {
+            streamDone = true;
+            break;
+          }
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) {
+              assistantContent += content;
+              // Update message in real time
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                if (last?.role === "assistant" && last.id === assistantId) {
+                  return prev.map((m, i) =>
+                    i === prev.length - 1 ? { ...m, content: assistantContent } : m
+                  );
+                }
+                return [...prev, { id: assistantId, role: "assistant", content: assistantContent }];
+              });
+
+              // Try extracting CV data from partial content
+              const extracted = extractCvData(assistantContent);
+              if (extracted) setCvData(extracted);
+            }
+          } catch {
+            textBuffer = line + "\n" + textBuffer;
+            break;
+          }
+        }
+      }
+
+      // Final flush
+      if (textBuffer.trim()) {
+        for (let raw of textBuffer.split("\n")) {
+          if (!raw) continue;
+          if (raw.endsWith("\r")) raw = raw.slice(0, -1);
+          if (raw.startsWith(":") || raw.trim() === "") continue;
+          if (!raw.startsWith("data: ")) continue;
+          const jsonStr = raw.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) assistantContent += content;
+          } catch {}
+        }
+      }
+
+      // Final CV data extraction
+      const finalData = extractCvData(assistantContent);
+      if (finalData) setCvData(finalData);
+
+      // Final message update with clean content (hiding cv-data block)
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, content: assistantContent } : m
+        )
+      );
+    } catch (err: any) {
+      console.error("Chat error:", err);
+      toast.error(err.message || "Failed to get AI response");
+      // Remove the loading state but keep user message
+    } finally {
+      setIsLoading(false);
+    }
+  }, [input, isLoading, messages]);
 
   const handleSave = () => {
     const saved = JSON.parse(localStorage.getItem("craftcv-list") || "[]");
-    saved.push({ id: uid(), name: cvData.personal.name || "Untitled CV", data: cvData, createdAt: new Date().toISOString() });
+    saved.push({
+      id: uid(),
+      name: cvData.personal.name || "Untitled CV",
+      data: cvData,
+      createdAt: new Date().toISOString(),
+    });
     localStorage.setItem("craftcv-list", JSON.stringify(saved));
     toast.success("CV saved successfully!");
   };
+
+  /** Display-friendly version of message (hide JSON blocks) */
+  const displayContent = (msg: ChatMessage) => stripCvDataBlock(msg.content);
 
   return (
     <div className="grid lg:grid-cols-[3fr_2fr] gap-6 h-[calc(100vh-220px)] min-h-[500px]">
@@ -69,34 +228,50 @@ const ChatToBuild = () => {
       <div className="flex flex-col bg-card rounded-2xl border border-border overflow-hidden">
         <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
           <AnimatePresence initial={false}>
-            {messages.map((msg) => (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                className={`flex gap-2.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                {msg.role === "assistant" && (
-                  <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+            {messages.map((msg) => {
+              const content = displayContent(msg);
+              if (!content) return null;
+              return (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={`flex gap-2.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  {msg.role === "assistant" && (
+                    <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+                    </div>
+                  )}
+                  <div
+                    className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground rounded-br-md"
+                        : "bg-secondary text-secondary-foreground rounded-bl-md"
+                    }`}
+                  >
+                    {content}
                   </div>
-                )}
-                <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-br-md"
-                    : "bg-secondary text-secondary-foreground rounded-bl-md"
-                }`}>
-                  {msg.content}
-                </div>
-                {msg.role === "user" && (
-                  <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <User className="w-3.5 h-3.5 text-muted-foreground" />
-                  </div>
-                )}
-              </motion.div>
-            ))}
+                  {msg.role === "user" && (
+                    <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <User className="w-3.5 h-3.5 text-muted-foreground" />
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
+          {isLoading && messages[messages.length - 1]?.role === "user" && (
+            <div className="flex gap-2.5 justify-start">
+              <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+              </div>
+              <div className="px-4 py-2.5 rounded-2xl bg-secondary text-secondary-foreground rounded-bl-md">
+                <Loader2 className="w-4 h-4 animate-spin" />
+              </div>
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
 
@@ -107,14 +282,15 @@ const ChatToBuild = () => {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
               placeholder="Type your response..."
-              className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all duration-300"
+              disabled={isLoading}
+              className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all duration-300 disabled:opacity-50"
             />
             <button
               onClick={sendMessage}
-              disabled={!input.trim()}
+              disabled={!input.trim() || isLoading}
               className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium transition-all duration-300 hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
             >
-              <Send className="w-4 h-4" />
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </button>
           </div>
         </div>
