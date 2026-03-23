@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Target, Check, FileText, Plus, Copy, Download,
+  Target, Check, FileText, Plus, Copy,
   RefreshCw, ChevronDown, ChevronUp
 } from "lucide-react";
 import CVPreview from "@/components/app/cv-builder/CVPreview";
