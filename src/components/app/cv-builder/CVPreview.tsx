@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
-import { FileText, Mail, Phone, MapPin, Globe } from "lucide-react";
+import { FileText, Mail, Phone, MapPin, Globe, Download } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import type { CVData } from "./types";
+import { toast } from "sonner";
 
 function calcCompleteness(data: CVData): number {
   let score = 0;
@@ -17,16 +18,68 @@ function calcCompleteness(data: CVData): number {
   return Math.min(score, 100);
 }
 
-const CVPreview = ({ data, onSave, showSave = false, highlightedSections }: {
+declare global {
+  interface Window {
+    html2pdf: any;
+  }
+}
+
+let html2pdfLoaded = false;
+function loadHtml2Pdf(): Promise<void> {
+  if (html2pdfLoaded && window.html2pdf) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js";
+    script.onload = () => { html2pdfLoaded = true; resolve(); };
+    script.onerror = () => reject(new Error("Failed to load html2pdf"));
+    document.head.appendChild(script);
+  });
+}
+
+function getFileName(data: CVData): string {
+  const name = data.personal.name?.trim();
+  if (name) {
+    return `${name} - CraftCV.pdf`;
+  }
+  return "CraftCV.pdf";
+}
+
+const handleDownloadPDF = async (data: CVData, elementId: string) => {
+  try {
+    toast.loading("Generating PDF...", { id: "pdf-gen" });
+    await loadHtml2Pdf();
+    const element = document.getElementById(elementId);
+    if (!element) throw new Error("CV element not found");
+
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: getFileName(data),
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
+    };
+
+    await window.html2pdf().set(opt).from(element).save();
+    toast.success("PDF downloaded!", { id: "pdf-gen" });
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to generate PDF", { id: "pdf-gen" });
+  }
+};
+
+const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highlightedSections, previewId }: {
   data: CVData;
   onSave?: () => void;
   showSave?: boolean;
+  showDownload?: boolean;
   highlightedSections?: string[];
+  previewId?: string;
 }) => {
   const { personal, experience, education, skills } = data;
   const completeness = calcCompleteness(data);
   const hasContent = personal.name || experience.length > 0 || education.length > 0 || skills.length > 0;
   const isHighlighted = (section: string) => highlightedSections?.includes(section);
+  const elId = previewId || "cv-preview-content";
 
   return (
     <div className="flex flex-col h-full">
@@ -49,7 +102,7 @@ const CVPreview = ({ data, onSave, showSave = false, highlightedSections }: {
             <p className="text-sm">Start chatting or uploading to see your CV here.</p>
           </div>
         ) : (
-          <div className="space-y-5 text-sm">
+          <div id={elId} className="space-y-5 text-sm">
             {personal.name && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
                 className={`border-b border-border pb-4 ${isHighlighted("personal") ? "bg-primary/5 -mx-4 px-4 rounded-xl" : ""}`}
@@ -127,6 +180,16 @@ const CVPreview = ({ data, onSave, showSave = false, highlightedSections }: {
           </div>
         )}
       </div>
+
+      {/* Download PDF button */}
+      {showDownload && hasContent && (
+        <button
+          onClick={() => handleDownloadPDF(data, elId)}
+          className="mt-4 w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-3 rounded-xl text-sm font-semibold transition-all duration-300 hover:brightness-110 active:scale-[0.97]"
+        >
+          <Download className="w-4 h-4" /> Download PDF
+        </button>
+      )}
 
       {/* Save button */}
       {showSave && completeness >= 60 && onSave && (
