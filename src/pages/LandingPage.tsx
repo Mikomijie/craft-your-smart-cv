@@ -7,12 +7,11 @@ import { GlowingOrbs, DriftingWords, CircuitLines } from "@/components/LandingBa
 const ease = [0.16, 1, 0.3, 1] as const;
 
 const fadeUp = (delay = 0) => ({
-  hidden: { opacity: 0, y: 20, filter: "blur(4px)" },
+  hidden: { opacity: 0, y: 12 },
   visible: {
     opacity: 1,
     y: 0,
-    filter: "blur(0px)",
-    transition: { delay, duration: 0.6, ease },
+    transition: { delay, duration: 0.35, ease },
   },
 });
 
