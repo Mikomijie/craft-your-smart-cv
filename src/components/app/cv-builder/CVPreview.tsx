@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { FileText, Mail, Phone, MapPin, Globe, Download, Linkedin, Github, Award, FolderOpen, Trophy, Layout } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
@@ -325,34 +325,57 @@ const buildPdfHtml = (data: CVData, template: TemplateId): string => {
   }
 };
 
-const handleDownloadPDF = async (data: CVData, template: TemplateId) => {
+const handleDownloadPDF = async (previewElement: HTMLElement | null, data: CVData, template: TemplateId) => {
   try {
-    const htmlContent = buildPdfHtml(data, template);
     if (!data.personal.name && data.experience.length === 0 && data.skills.length === 0) {
       toast.error("CV is empty — add some content first");
       return;
     }
+
+    if (!previewElement) {
+      toast.error("Preview not ready yet — please try again");
+      return;
+    }
+
     toast.loading("Generating PDF...", { id: "pdf-gen" });
     await loadHtml2Pdf();
+
+    const exportNode = previewElement.cloneNode(true) as HTMLElement;
+    exportNode.querySelectorAll("[data-export-hide='true']").forEach((node) => node.remove());
+    exportNode.querySelectorAll("[style*='transform'], [style*='opacity']").forEach((node) => {
+      const el = node as HTMLElement;
+      el.style.transform = "none";
+      el.style.opacity = "1";
+      el.style.filter = "none";
+    });
+
     const container = document.createElement("div");
-    container.innerHTML = htmlContent;
     container.style.position = "fixed";
     container.style.left = "0";
     container.style.top = "0";
-    container.style.width = "794px"; // A4 width at 96dpi
+    container.style.width = "794px";
+    container.style.padding = "32px";
     container.style.background = "#ffffff";
     container.style.zIndex = "-9999";
     container.style.pointerEvents = "none";
-    container.style.overflow = "hidden";
+    container.style.boxSizing = "border-box";
+    exportNode.style.height = "auto";
+    exportNode.style.maxHeight = "none";
+    exportNode.style.overflow = "visible";
+    container.appendChild(exportNode);
     document.body.appendChild(container);
+
     await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+
     const opt = {
-      margin: [18, 18, 18, 18],
+      margin: [0, 0, 0, 0],
       filename: getFileName(data),
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, letterRendering: true, backgroundColor: "#ffffff" },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
+      pagebreak: { mode: ["css", "legacy"] },
     };
+
     await window.html2pdf().set(opt).from(container).save();
     document.body.removeChild(container);
     toast.success("PDF downloaded!", { id: "pdf-gen" });
@@ -371,6 +394,7 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
   previewId?: string;
 }) => {
   const [template, setTemplate] = useState<TemplateId>("modern");
+  const previewRef = useRef<HTMLDivElement>(null);
   const { personal, experience, education, skills, projects, certifications, extracurriculars } = data;
   const completeness = calcCompleteness(data);
   const hasContent = personal.name || experience.length > 0 || education.length > 0 || skills.length > 0;
@@ -408,7 +432,7 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
         </div>
       )}
 
-      <div className={`flex-1 rounded-2xl border border-border p-6 md:p-8 overflow-y-auto min-h-0 ${
+      <div ref={previewRef} className={`flex-1 rounded-2xl border border-border p-6 md:p-8 overflow-y-auto min-h-0 ${
         template === "classic" ? "bg-amber-50/50 font-serif" : template === "minimal" ? "bg-card" : "bg-card"
       }`}>
         {!hasContent ? (
@@ -577,7 +601,7 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
         <div className="flex gap-2 mt-4">
           {showDownload && (
             <button
-              onClick={() => handleDownloadPDF(data, template)}
+              onClick={() => handleDownloadPDF(previewRef.current, data, template)}
               className="flex-1 flex items-center justify-center gap-2 bg-primary text-primary-foreground py-3 rounded-xl text-sm font-semibold transition-all duration-300 hover:brightness-110 active:scale-[0.97]"
             >
               <Download className="w-4 h-4" /> Download PDF
