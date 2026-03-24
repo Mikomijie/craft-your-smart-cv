@@ -755,57 +755,15 @@ export function generateCV(data: CVData, template: TemplateId, pageMode: PageMod
 
   const renderer = template === "classic" ? renderClassic : template === "modern" ? renderModern : renderMinimal;
   const M = MARGINS[template];
-  const maxY = PAGE_H - M; // usable bottom
+  const maxY = PAGE_H - M;
 
-  // Pass 1: measure at scale=1
+  // Measure at scale=1
   const measureDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const measuredY = renderer(measureDoc, d, 1);
 
   if (pageMode === "multi" && measuredY > maxY) {
-    // Multi-page: render on an oversized single page, then tile onto A4 pages
     const pagesNeeded = Math.ceil(measuredY / maxY);
-
-    // Create a doc with a very tall page to capture all content
-    const tallDoc = new jsPDF({ unit: "mm", format: [PAGE_W, measuredY + M * 2], orientation: "portrait" });
-    renderer(tallDoc, d, 1);
-
-    // Now create the final A4 doc by copying regions
-    const finalDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-
-    for (let page = 0; page < pagesNeeded; page++) {
-      if (page > 0) finalDoc.addPage();
-
-      // Render the full content again but with Y shifted so only this page's portion is visible
-      // jsPDF draws at any Y coordinate — content outside [0, PAGE_H] is simply invisible
-      const yOffset = -(page * maxY) + (page > 0 ? M : 0);
-
-      // Create a temporary renderer that offsets Y
-      // Since we can't easily offset, re-render at full scale with shifted positions
-      // by using a fresh approach: render to the tall doc and extract as image
-
-      // Pragmatic: use the internal pages from tallDoc
-    }
-
-    // Most reliable jsPDF multi-page approach: 
-    // Render at scale=1 on the tall doc, then convert each page-region to an image
-    // and place on A4 pages. However this loses text selectability.
-
-    // Better pragmatic approach: scale content to fit exactly N pages
-    // where each page uses the full available height
-    const multiScale = (maxY * pagesNeeded) / measuredY;
     const multiDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    
-    // We need to render sections and break across pages
-    // Simplest working solution: render full content shifted per page
-    for (let page = 0; page < pagesNeeded; page++) {
-      if (page > 0) multiDoc.addPage();
-      // Use internal jsPDF translate by saving/restoring context
-      // jsPDF has no translate, so we modify the render functions...
-    }
-
-    // FINAL pragmatic approach that actually works with jsPDF:
-    // Scale to fit exactly 2 pages (or N pages) — render once per page with Y offset
-    // Since our renderers use absolute Y, we wrap them with an offset
     renderMultiPage(multiDoc, d, template, pagesNeeded, maxY, M);
     multiDoc.save(getFileName(d, template));
     return;
