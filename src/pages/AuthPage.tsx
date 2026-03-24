@@ -3,14 +3,24 @@ import { motion } from "framer-motion";
 import { FileText, Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, Navigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const AuthPage = () => {
+  const { session, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  if (authLoading) return (
+    <div className="min-h-screen bg-surface flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+  if (session) return <Navigate to="/app" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +32,7 @@ const AuthPage = () => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         toast.success("Welcome back!");
+        navigate("/app");
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -30,6 +41,7 @@ const AuthPage = () => {
         });
         if (error) throw error;
         toast.success("Account created! Welcome aboard!");
+        navigate("/app");
       }
     } catch (err: any) {
       toast.error(err.message || "Authentication failed");
