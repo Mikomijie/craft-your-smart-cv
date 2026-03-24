@@ -5,6 +5,7 @@ import type { TemplateId } from "./CVPreview";
 /* ── Constants ─────────────────────────────────────────────── */
 const PAGE_W = 210;
 const PAGE_H = 297;
+const PT = 0.3528; // mm per pt
 
 const MARGINS: Record<TemplateId, number> = {
   classic: 18,
@@ -26,28 +27,61 @@ function wrap(doc: jsPDF, text: string, maxW: number): string[] {
   return doc.splitTextToSize(text, maxW) as string[];
 }
 
-/* mm per pt: jsPDF uses mm, font sizes in pt. 1pt ≈ 0.3528mm */
-const PT = 0.3528;
+/** Auto-generate a professional summary from CV data */
+function autoSummary(data: CVData): string {
+  const { personal: p, experience, skills } = data;
+  const title = p.title || "Professional";
+  const years = experience.length > 0
+    ? `${Math.max(experience.length, 2)}+`
+    : "";
+  const topSkills = skills.slice(0, 5).join(", ");
+  const latestRole = experience[0]?.role || "";
+  const latestCompany = experience[0]?.company || "";
+
+  let summary = "";
+  if (years) {
+    summary = `Results-driven ${title} with ${years} years of experience`;
+  } else {
+    summary = `Motivated ${title}`;
+  }
+  if (topSkills) {
+    summary += ` specializing in ${topSkills}`;
+  }
+  if (latestRole && latestCompany) {
+    summary += `. Most recently served as ${latestRole} at ${latestCompany}`;
+  }
+  summary += ". Committed to delivering high-quality results and continuous professional growth.";
+  return summary;
+}
+
+/** Ensure data has a summary, auto-generating if needed */
+function ensureSummary(data: CVData): CVData {
+  if (data.personal.summary?.trim()) return data;
+  return {
+    ...data,
+    personal: { ...data.personal, summary: autoSummary(data) },
+  };
+}
 
 /* ══════════════════════════════════════════════════════════════
    TEMPLATE 1 — CLASSIC (ATS Optimized)
+   Single column, centered header, ALL CAPS headers, plain skills
    ══════════════════════════════════════════════════════════════ */
-function generateClassic(doc: jsPDF, data: CVData, scale: number): void {
+function renderClassic(doc: jsPDF, data: CVData, scale: number): number {
   const M = MARGINS.classic;
   const CW = PAGE_W - M * 2;
   const { personal: p, experience, education, skills, projects, certifications, extracurriculars } = data;
   const name = cleanName(p.name || "Your Name");
 
-  // Scaled sizes (base sizes in pt, converted via scale)
-  const ns = 28 * scale;   // name
-  const ts = 14 * scale;   // title
-  const cs = 11 * scale;   // contact
-  const sh = 11 * scale;   // section header
-  const bs = 10.5 * scale; // body
-  const lh = bs * PT * 1.6; // line height
-  const secGap = 14 * PT * scale; // 14px between sections
-  const itemGap = 8 * PT * scale; // 8px between items
-  const bulletIndent = 12 * PT; // 12px indent
+  const ns = 28 * scale;
+  const ts = 14 * scale;
+  const cs = 11 * scale;
+  const sh = 11 * scale;
+  const bs = 10.5 * scale;
+  const lh = bs * PT * 1.6;
+  const secGap = 14 * PT * scale;
+  const itemGap = 8 * PT * scale;
+  const bulletIndent = 12 * PT;
 
   let y = M;
 
@@ -71,8 +105,7 @@ function generateClassic(doc: jsPDF, data: CVData, scale: number): void {
     doc.setFont("helvetica", "normal").setFontSize(cs);
     doc.setTextColor(102, 102, 102);
     const contactStr = contacts.join("  |  ");
-    const lines = wrap(doc, contactStr, CW);
-    for (const l of lines) {
+    for (const l of wrap(doc, contactStr, CW)) {
       doc.text(l, PAGE_W / 2, y, { align: "center" });
       y += cs * PT * 1.4;
     }
@@ -85,7 +118,7 @@ function generateClassic(doc: jsPDF, data: CVData, scale: number): void {
   doc.line(M, y, PAGE_W - M, y);
   y += secGap;
 
-  // Helper: section header
+  // Section header helper — NO letter-spacing
   const drawHeader = (title: string) => {
     doc.setFont("helvetica", "bold").setFontSize(sh);
     doc.setTextColor(34, 34, 34);
@@ -112,7 +145,6 @@ function generateClassic(doc: jsPDF, data: CVData, scale: number): void {
   if (experience.length) {
     drawHeader("PROFESSIONAL EXPERIENCE");
     for (const e of experience) {
-      // Role bold + dates right
       doc.setFont("helvetica", "bold").setFontSize(bs);
       doc.setTextColor(34, 34, 34);
       doc.text(e.role || "", M, y);
@@ -123,21 +155,18 @@ function generateClassic(doc: jsPDF, data: CVData, scale: number): void {
         doc.text(ds, PAGE_W - M, y, { align: "right" });
       }
       y += lh;
-      // Company
       if (e.company) {
         doc.setFont("helvetica", "normal").setFontSize(bs);
         doc.setTextColor(102, 102, 102);
         doc.text(e.company, M, y);
         y += lh;
       }
-      // Bullets
       if (e.description) {
         doc.setFont("helvetica", "normal").setFontSize(bs);
         doc.setTextColor(51, 51, 51);
         for (const b of e.description.split("\n").filter(l => l.trim())) {
           const clean = b.replace(/^[•▪\-]\s*/, "");
-          const bLines = wrap(doc, `• ${clean}`, CW - bulletIndent);
-          for (const bl of bLines) {
+          for (const bl of wrap(doc, `• ${clean}`, CW - bulletIndent)) {
             doc.text(bl, M + bulletIndent, y);
             y += lh;
           }
@@ -172,13 +201,12 @@ function generateClassic(doc: jsPDF, data: CVData, scale: number): void {
     y += secGap - itemGap;
   }
 
-  // Skills — plain text, comma separated
+  // Skills — plain comma separated
   if (skills.length) {
     drawHeader("SKILLS");
     doc.setFont("helvetica", "normal").setFontSize(bs);
     doc.setTextColor(51, 51, 51);
-    const skillText = skills.join(", ");
-    for (const l of wrap(doc, skillText, CW)) {
+    for (const l of wrap(doc, skills.join(", "), CW)) {
       doc.text(l, M, y);
       y += lh;
     }
@@ -243,22 +271,25 @@ function generateClassic(doc: jsPDF, data: CVData, scale: number): void {
       }
     }
   }
+
+  return y;
 }
 
 /* ══════════════════════════════════════════════════════════════
    TEMPLATE 2 — MODERN (Blue Accent)
+   Blue left stripe, blue headers, • bullets, pill skill tags
    ══════════════════════════════════════════════════════════════ */
-function generateModern(doc: jsPDF, data: CVData, scale: number): void {
+function renderModern(doc: jsPDF, data: CVData, scale: number): number {
   const M = MARGINS.modern;
-  const STRIPE_W = 8; // blue left stripe
-  const TEXT_L = M; // text starts at margin (stripe is decorative at edge)
+  const STRIPE_W = 8;
+  const TEXT_L = M;
   const CW = PAGE_W - M * 2;
   const { personal: p, experience, education, skills, projects, certifications, extracurriculars } = data;
   const name = cleanName(p.name || "Your Name");
 
-  const BLUE = [37, 99, 235] as const;     // #2563eb
-  const PILL_BG = [219, 234, 254] as const; // #dbeafe
-  const PILL_TX = [30, 64, 175] as const;   // #1e40af
+  const BLUE = [37, 99, 235] as const;
+  const PILL_BG = [219, 234, 254] as const;
+  const PILL_TX = [30, 64, 175] as const;
 
   const ns = 26 * scale;
   const ts = 13 * scale;
@@ -270,19 +301,19 @@ function generateModern(doc: jsPDF, data: CVData, scale: number): void {
   const itemGap = 8 * PT * scale;
   const bulletIndent = 12 * PT;
 
-  // Draw blue left stripe
+  // Blue left stripe
   doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
   doc.rect(0, 0, STRIPE_W, PAGE_H, "F");
 
   let y = M;
 
-  // Name — left, bold, dark
+  // Name
   doc.setFont("helvetica", "bold").setFontSize(ns);
   doc.setTextColor(17, 17, 17);
   doc.text(name, TEXT_L, y);
   y += ns * PT * 1.1;
 
-  // Title — left, blue
+  // Title — blue
   if (p.title) {
     doc.setFont("helvetica", "normal").setFontSize(ts);
     doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
@@ -290,27 +321,23 @@ function generateModern(doc: jsPDF, data: CVData, scale: number): void {
     y += ts * PT * 1.3;
   }
 
-  // Contact — left, grey, small
+  // Contact
   const contacts = [p.email, p.phone, p.location, p.linkedin, p.github, p.website].filter(Boolean);
   if (contacts.length) {
     doc.setFont("helvetica", "normal").setFontSize(cs);
     doc.setTextColor(120, 120, 120);
-    const contactStr = contacts.join("  |  ");
-    const lines = wrap(doc, contactStr, CW);
-    for (const l of lines) {
+    for (const l of wrap(doc, contacts.join("  |  "), CW)) {
       doc.text(l, TEXT_L, y);
       y += cs * PT * 1.4;
     }
   }
   y += 2;
 
-  // Section header helper
+  // Section header — NO letter-spacing, blue, thin blue underline
   const drawHeader = (title: string) => {
     doc.setFont("helvetica", "bold").setFontSize(sh);
     doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
-    // letter spacing approximation: add spaces
-    const spaced = title.toUpperCase().split("").join(String.fromCharCode(8202)); // hair space
-    doc.text(spaced, TEXT_L, y);
+    doc.text(title.toUpperCase(), TEXT_L, y);
     y += 1.5;
     doc.setDrawColor(BLUE[0], BLUE[1], BLUE[2]);
     doc.setLineWidth(0.3);
@@ -329,11 +356,10 @@ function generateModern(doc: jsPDF, data: CVData, scale: number): void {
     y += secGap;
   }
 
-  // Experience
+  // Experience — company bold, dates right, • bullets
   if (experience.length) {
     drawHeader("EXPERIENCE");
     for (const e of experience) {
-      // Company bold + dates right
       doc.setFont("helvetica", "bold").setFontSize(bs);
       doc.setTextColor(17, 17, 17);
       doc.text(e.company || "", TEXT_L, y);
@@ -344,27 +370,19 @@ function generateModern(doc: jsPDF, data: CVData, scale: number): void {
         doc.text(ds, PAGE_W - M, y, { align: "right" });
       }
       y += lh;
-      // Role in medium grey
       if (e.role) {
         doc.setFont("helvetica", "normal").setFontSize(bs);
         doc.setTextColor(100, 100, 100);
         doc.text(e.role, TEXT_L, y);
         y += lh;
       }
-      // Bullets with blue square ▪
       if (e.description) {
         doc.setFont("helvetica", "normal").setFontSize(bs);
         doc.setTextColor(51, 51, 51);
         for (const b of e.description.split("\n").filter(l => l.trim())) {
           const clean = b.replace(/^[•▪\-]\s*/, "");
-          // Draw blue square
-          const sqSize = bs * PT * 0.5;
-          doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
-          doc.rect(TEXT_L + bulletIndent * 0.3, y - sqSize * 0.7, sqSize, sqSize, "F");
-          const bLines = wrap(doc, clean, CW - bulletIndent);
-          for (let i = 0; i < bLines.length; i++) {
-            doc.setTextColor(51, 51, 51);
-            doc.text(bLines[i], TEXT_L + bulletIndent, y);
+          for (const bl of wrap(doc, `• ${clean}`, CW - bulletIndent)) {
+            doc.text(bl, TEXT_L + bulletIndent, y);
             y += lh;
           }
         }
@@ -413,10 +431,8 @@ function generateModern(doc: jsPDF, data: CVData, scale: number): void {
         cx = TEXT_L;
         y += pillH + pillGap;
       }
-      // Pill background
       doc.setFillColor(PILL_BG[0], PILL_BG[1], PILL_BG[2]);
       doc.roundedRect(cx, y - pillH * 0.6, pw, pillH, 1.5, 1.5, "F");
-      // Pill text
       doc.setFont("helvetica", "bold");
       doc.setTextColor(PILL_TX[0], PILL_TX[1], PILL_TX[2]);
       doc.text(s, cx + pillPad, y + pillH * 0.15);
@@ -477,28 +493,27 @@ function generateModern(doc: jsPDF, data: CVData, scale: number): void {
     doc.setFont("helvetica", "normal").setFontSize(bs);
     doc.setTextColor(51, 51, 51);
     for (const item of extracurriculars) {
-      const sqSize = bs * PT * 0.5;
-      doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
-      doc.rect(TEXT_L + bulletIndent * 0.3, y - sqSize * 0.7, sqSize, sqSize, "F");
-      for (const l of wrap(doc, item, CW - bulletIndent)) {
-        doc.setTextColor(51, 51, 51);
+      for (const l of wrap(doc, `• ${item}`, CW - bulletIndent)) {
         doc.text(l, TEXT_L + bulletIndent, y);
         y += lh;
       }
     }
   }
+
+  return y;
 }
 
 /* ══════════════════════════════════════════════════════════════
    TEMPLATE 3 — MINIMAL (Two Column)
+   Left main 62%, right grey sidebar 35%
    ══════════════════════════════════════════════════════════════ */
-function generateMinimal(doc: jsPDF, data: CVData, scale: number): void {
+function renderMinimal(doc: jsPDF, data: CVData, scale: number): number {
   const M = MARGINS.minimal;
   const { personal: p, experience, education, skills, projects, certifications, extracurriculars } = data;
   const name = cleanName(p.name || "Your Name");
 
   const BLUE = [37, 99, 235] as const;
-  const SIDEBAR_BG = [248, 249, 250] as const; // #f8f9fa
+  const SIDEBAR_BG = [248, 249, 250] as const;
   const totalW = PAGE_W - M * 2;
   const mainW = totalW * 0.62;
   const sideW = totalW * 0.35;
@@ -522,12 +537,13 @@ function generateMinimal(doc: jsPDF, data: CVData, scale: number): void {
   let yMain = M;
   let ySide = M;
 
-  // ── HEADER (main column) ──
+  // Name
   doc.setFont("helvetica", "bold").setFontSize(ns);
   doc.setTextColor(34, 34, 34);
   doc.text(name, M, yMain);
   yMain += ns * PT * 1.1;
 
+  // Title — blue
   if (p.title) {
     doc.setFont("helvetica", "normal").setFontSize(ts);
     doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
@@ -536,42 +552,28 @@ function generateMinimal(doc: jsPDF, data: CVData, scale: number): void {
   }
   yMain += secGap * 0.5;
 
-  // Section header helpers
+  // Section header helpers — NO letter-spacing
   const drawMainHeader = (title: string) => {
     doc.setFont("helvetica", "normal").setFontSize(sh);
     doc.setTextColor(136, 136, 136);
-    // Small caps approximation with letter spacing
-    const spaced = title.toUpperCase().split("").join(String.fromCharCode(8202) + String.fromCharCode(8202));
-    doc.text(spaced, M, yMain);
+    doc.text(title.toUpperCase(), M, yMain);
     yMain += sh * PT * 1.5;
   };
 
   const drawSideHeader = (title: string) => {
     doc.setFont("helvetica", "normal").setFontSize(sh);
     doc.setTextColor(136, 136, 136);
-    const spaced = title.toUpperCase().split("").join(String.fromCharCode(8202) + String.fromCharCode(8202));
-    doc.text(spaced, sideX, ySide);
+    doc.text(title.toUpperCase(), sideX, ySide);
     ySide += sh * PT * 1.5;
   };
 
   // ── SIDEBAR ──
-
-  // Contact info
   drawSideHeader("CONTACT");
-  const contacts = [
-    p.email && `${p.email}`,
-    p.phone && `${p.phone}`,
-    p.location && `${p.location}`,
-    p.linkedin && `${p.linkedin}`,
-    p.github && `${p.github}`,
-    p.website && `${p.website}`,
-  ].filter(Boolean) as string[];
-
+  const contacts = [p.email, p.phone, p.location, p.linkedin, p.github, p.website].filter(Boolean) as string[];
   doc.setFont("helvetica", "normal").setFontSize(cs);
   doc.setTextColor(68, 68, 68);
   for (const c of contacts) {
-    const lines = wrap(doc, c, sideW);
-    for (const l of lines) {
+    for (const l of wrap(doc, c, sideW)) {
       doc.text(l, sideX, ySide);
       ySide += cs * PT * 1.5;
     }
@@ -579,12 +581,11 @@ function generateMinimal(doc: jsPDF, data: CVData, scale: number): void {
   }
   ySide += secGap;
 
-  // Skills — plain text list with blue dot
+  // Skills — plain text with blue dot
   if (skills.length) {
     drawSideHeader("SKILLS");
     doc.setFont("helvetica", "normal").setFontSize(bs);
     for (const s of skills) {
-      // Blue dot
       doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
       doc.circle(sideX + 1.5, ySide - bs * PT * 0.25, 0.8, "F");
       doc.setTextColor(51, 51, 51);
@@ -600,8 +601,7 @@ function generateMinimal(doc: jsPDF, data: CVData, scale: number): void {
     for (const c of certifications) {
       doc.setFont("helvetica", "bold").setFontSize(bs * 0.95);
       doc.setTextColor(34, 34, 34);
-      const certLines = wrap(doc, c.name || "", sideW);
-      for (const l of certLines) {
+      for (const l of wrap(doc, c.name || "", sideW)) {
         doc.text(l, sideX, ySide);
         ySide += lh;
       }
@@ -624,8 +624,7 @@ function generateMinimal(doc: jsPDF, data: CVData, scale: number): void {
     for (const item of extracurriculars) {
       doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
       doc.circle(sideX + 1.5, ySide - bs * PT * 0.25, 0.8, "F");
-      const lines = wrap(doc, item, sideW - 6);
-      for (const l of lines) {
+      for (const l of wrap(doc, item, sideW - 6)) {
         doc.text(l, sideX + 5, ySide);
         ySide += lh;
       }
@@ -671,8 +670,7 @@ function generateMinimal(doc: jsPDF, data: CVData, scale: number): void {
         doc.setTextColor(51, 51, 51);
         for (const b of e.description.split("\n").filter(l => l.trim())) {
           const clean = b.replace(/^[•▪\-]\s*/, "");
-          const bLines = wrap(doc, `• ${clean}`, mainW - bulletIndent);
-          for (const bl of bLines) {
+          for (const bl of wrap(doc, `• ${clean}`, mainW - bulletIndent)) {
             doc.text(bl, M + bulletIndent, yMain);
             yMain += lh;
           }
@@ -738,49 +736,38 @@ function generateMinimal(doc: jsPDF, data: CVData, scale: number): void {
       yMain += itemGap;
     }
   }
+
+  return Math.max(yMain, ySide);
 }
 
 /* ══════════════════════════════════════════════════════════════
-   MAIN EXPORT — measures, scales, renders
+   MAIN EXPORT — auto-scale to fit one page
    ══════════════════════════════════════════════════════════════ */
 export function generateCV(data: CVData, template: TemplateId): void {
-  // Guard: check content exists
-  const { personal: p, experience, education, skills } = data;
+  const d = ensureSummary(data);
+  const { personal: p, experience, education, skills } = d;
   if (!p.name && experience.length === 0 && education.length === 0 && skills.length === 0) {
     return;
   }
 
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  const renderer = template === "classic" ? renderClassic : template === "modern" ? renderModern : renderMinimal;
+  const M = MARGINS[template];
+  const maxY = PAGE_H - M; // usable bottom
 
-  // Two-pass: first render to measure, then scale and re-render
-  // For simplicity with the template refactor, we do a single pass with scale=1
-  // and rely on the generous spacing to fit. For extreme content, we scale down.
-  const testDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  
-  // Quick height estimation by rendering to a test doc
-  const renderer = template === "classic" ? generateClassic : template === "modern" ? generateModern : generateMinimal;
-  renderer(testDoc, data, 1);
+  // Pass 1: measure at scale=1
+  const measureDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  const measuredY = renderer(measureDoc, d, 1);
 
-  // Check if last text position exceeds page — crude but effective
-  // jsPDF doesn't expose cursor, so we trust the generous spacing.
-  // For safety, scale down if there's a lot of content
-  const sectionCount = [
-    p.summary ? 1 : 0,
-    experience.length,
-    education.length,
-    skills.length > 0 ? 1 : 0,
-    data.projects.length,
-    data.certifications.length,
-    data.extracurriculars.length > 0 ? 1 : 0,
-  ].reduce((a, b) => a + b, 0);
-
+  // Calculate scale to fit one page
   let scale = 1;
-  if (sectionCount > 12) scale = 0.85;
-  else if (sectionCount > 9) scale = 0.9;
-  else if (sectionCount > 6) scale = 0.95;
-  // If very sparse, stretch slightly
-  if (sectionCount <= 3) scale = 1.1;
+  if (measuredY > maxY) {
+    scale = Math.max(0.7, maxY / measuredY);
+  } else if (measuredY < maxY * 0.6) {
+    scale = Math.min(1.15, (maxY * 0.88) / measuredY);
+  }
 
-  renderer(doc, data, scale);
-  doc.save(getFileName(data, template));
+  // Pass 2: render final
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  renderer(doc, d, scale);
+  doc.save(getFileName(d, template));
 }
