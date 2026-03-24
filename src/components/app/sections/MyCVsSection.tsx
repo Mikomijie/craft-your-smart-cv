@@ -1,13 +1,20 @@
-import { FileText, Plus, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { FileText, Plus, Sparkles, Download, Trash2, Loader2 } from "lucide-react";
 import { sampleCV } from "@/components/app/cv-builder/sampleCV";
 import { uid } from "@/components/app/cv-builder/types";
+import type { CVData } from "@/components/app/cv-builder/types";
+import { generateCV } from "@/components/app/cv-builder/pdfGenerator";
 import { toast } from "sonner";
 
 const MyCVsSection = ({ onNavigate }: { onNavigate: (section: string) => void }) => {
-  const hasCVs = !!localStorage.getItem("craftcv-data") || (JSON.parse(localStorage.getItem("craftcv-list") || "[]")).length > 0;
+  const [, forceUpdate] = useState(0);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const savedList: { id: string; name: string; data: CVData; createdAt: string }[] =
+    JSON.parse(localStorage.getItem("craftcv-list") || "[]");
 
   const handleTryDemo = () => {
-    const saved = JSON.parse(localStorage.getItem("craftcv-list") || "[]");
+    const saved = [...savedList];
     saved.push({
       id: uid(),
       name: sampleCV.personal.name,
@@ -16,25 +23,66 @@ const MyCVsSection = ({ onNavigate }: { onNavigate: (section: string) => void })
     });
     localStorage.setItem("craftcv-list", JSON.stringify(saved));
     toast.success("Sample CV added! You can now tailor it for any job.");
-    // Force re-render
-    window.dispatchEvent(new Event("storage"));
-    onNavigate("my-cvs");
+    forceUpdate((n) => n + 1);
   };
 
-  const savedList = JSON.parse(localStorage.getItem("craftcv-list") || "[]");
+  const handleDownload = (cv: { id: string; data: CVData }, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDownloadingId(cv.id);
+    try {
+      generateCV(cv.data, "modern");
+      toast.success("PDF downloaded!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate PDF");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleDelete = (cvId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = savedList.filter((c) => c.id !== cvId);
+    localStorage.setItem("craftcv-list", JSON.stringify(updated));
+    toast.success("CV deleted");
+    forceUpdate((n) => n + 1);
+  };
 
   return (
     <div className="space-y-6">
       {savedList.length > 0 ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {savedList.map((cv: any) => (
+          {savedList.map((cv) => (
             <div
               key={cv.id}
               className="group relative bg-card rounded-2xl border border-border p-6 hover:border-primary/30 hover:shadow-md transition-all duration-300 cursor-pointer"
               onClick={() => onNavigate("build")}
             >
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                <FileText className="w-5 h-5 text-primary" />
+              <div className="flex items-start justify-between mb-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-primary" />
+                </div>
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => handleDownload(cv, e)}
+                    disabled={downloadingId === cv.id}
+                    className="p-2 rounded-lg hover:bg-primary/10 text-primary transition-colors"
+                    title="Download PDF"
+                  >
+                    {downloadingId === cv.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => handleDelete(cv.id, e)}
+                    className="p-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors"
+                    title="Delete CV"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <h3 className="font-semibold text-sm mb-1">{cv.name || "My CV"}</h3>
               <p className="text-xs text-muted-foreground">
