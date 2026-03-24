@@ -3,7 +3,8 @@ import { motion } from "framer-motion";
 import { FileText, Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, Navigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true);
