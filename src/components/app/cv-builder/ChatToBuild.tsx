@@ -304,7 +304,7 @@ const ChatToBuild = () => {
 
         {/* Desktop CV Preview */}
         <div className="hidden lg:flex flex-col min-h-0">
-          <CVPreview data={cvData} onSave={handleSave} showSave />
+          <CVPreview data={cvData} onSave={handleSave} showSave showDownload />
         </div>
       </div>
     </div>
