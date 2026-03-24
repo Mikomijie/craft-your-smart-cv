@@ -84,8 +84,6 @@ const LandingPage = () => {
     <div className="landing-section min-h-screen relative overflow-hidden">
       {/* Background layers */}
       <GlowingOrbs />
-      <DriftingWords />
-      <CircuitLines />
 
       {/* ═══ Nav ═══ */}
       <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
