@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { FileText, Mail, Phone, MapPin, Globe, Download, Linkedin, Github, Award, FolderOpen, Trophy, Layout } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
