@@ -432,7 +432,7 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
         </div>
       )}
 
-      <div className={`flex-1 rounded-2xl border border-border p-6 md:p-8 overflow-y-auto min-h-0 ${
+      <div ref={previewRef} className={`flex-1 rounded-2xl border border-border p-6 md:p-8 overflow-y-auto min-h-0 ${
         template === "classic" ? "bg-amber-50/50 font-serif" : template === "minimal" ? "bg-card" : "bg-card"
       }`}>
         {!hasContent ? (
