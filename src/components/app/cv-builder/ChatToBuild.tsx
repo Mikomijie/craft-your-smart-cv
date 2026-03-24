@@ -143,7 +143,7 @@ const ChatToBuild = () => {
               });
 
               const extracted = extractCvData(assistantContent);
-              if (extracted) setCvData(extracted);
+              if (extracted) { setCvData(extracted.cv); setPageMode(extracted.pageMode); }
             }
           } catch {
             textBuffer = line + "\n" + textBuffer;
