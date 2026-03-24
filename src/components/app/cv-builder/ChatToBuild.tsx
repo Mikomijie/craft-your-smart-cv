@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Bot, User, Loader2, Eye, EyeOff } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import CVPreview from "./CVPreview";
 import type { CVData, ChatMessage } from "./types";
 import { defaultCV, uid } from "./types";
