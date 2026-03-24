@@ -213,7 +213,7 @@ const ChatToBuild = () => {
           exit={{ opacity: 0, y: 20 }}
           className="mb-4"
         >
-          <CVPreview data={cvData} onSave={handleSave} showSave />
+          <CVPreview data={cvData} onSave={handleSave} showSave showDownload />
         </motion.div>
       )}
 
