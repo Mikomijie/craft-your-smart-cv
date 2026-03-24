@@ -18,12 +18,12 @@ const INITIAL_MSG: ChatMessage = {
     "Hey! I'm going to help you build an amazing CV. Let's start simple — what's your name and what kind of role are you looking for?",
 };
 
-function extractCvData(text: string): CVData | null {
+function extractCvData(text: string): { cv: CVData; pageMode: PageMode } | null {
   const match = text.match(/```cv-data\s*\n([\s\S]*?)```/);
   if (!match) return null;
   try {
     const raw = JSON.parse(match[1]);
-    return {
+    const cv: CVData = {
       personal: { ...defaultCV.personal, ...raw.personal },
       experience: (raw.experience || []).map((e: any, i: number) => ({
         id: `exp-${i}`, company: e.company || "", role: e.role || "",
@@ -43,6 +43,8 @@ function extractCvData(text: string): CVData | null {
       })),
       extracurriculars: raw.extracurriculars || [],
     };
+    const pageMode: PageMode = raw.pagePreference === "multi" ? "multi" : "single";
+    return { cv, pageMode };
   } catch { return null; }
 }
 
