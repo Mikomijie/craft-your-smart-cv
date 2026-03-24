@@ -742,7 +742,7 @@ function renderMinimal(doc: jsPDF, data: CVData, scale: number): number {
 
 /* ══════════════════════════════════════════════════════════════
    MAIN EXPORT — supports single-page (default) and multi-page
-   pageMode: "single" = scale to fit 1 page, "multi" = natural flow with page breaks
+   pageMode: "single" = scale to fit 1 page, "multi" = natural flow across pages
    ══════════════════════════════════════════════════════════════ */
 export type PageMode = "single" | "multi";
 
@@ -757,48 +757,61 @@ export function generateCV(data: CVData, template: TemplateId, pageMode: PageMod
   const M = MARGINS[template];
   const maxY = PAGE_H - M; // usable bottom
 
-  if (pageMode === "multi") {
-    // Multi-page: render at scale=1, then split across pages
-    const measureDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    const totalY = renderer(measureDoc, d, 1);
+  // Pass 1: measure at scale=1
+  const measureDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  const measuredY = renderer(measureDoc, d, 1);
 
-    if (totalY <= maxY) {
-      // Fits on one page anyway
-      const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-      renderer(doc, d, 1);
-      doc.save(getFileName(d, template));
-      return;
-    }
+  if (pageMode === "multi" && measuredY > maxY) {
+    // Multi-page: render on an oversized single page, then tile onto A4 pages
+    const pagesNeeded = Math.ceil(measuredY / maxY);
 
-    // Need multiple pages — render at scale=1, use jsPDF internal page splitting
-    const pagesNeeded = Math.ceil(totalY / maxY);
-    const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    // Create a doc with a very tall page to capture all content
+    const tallDoc = new jsPDF({ unit: "mm", format: [PAGE_W, measuredY + M * 2], orientation: "portrait" });
+    renderer(tallDoc, d, 1);
+
+    // Now create the final A4 doc by copying regions
+    const finalDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
     for (let page = 0; page < pagesNeeded; page++) {
-      if (page > 0) doc.addPage();
-      // Save state, translate, and clip to simulate page
-      const offsetY = page * maxY;
-      // Re-render with offset by using a temporary doc approach
-      // Since jsPDF doesn't support clipping easily, we re-render and let content overflow
-      // but only on the final page setup
+      if (page > 0) finalDoc.addPage();
+
+      // Render the full content again but with Y shifted so only this page's portion is visible
+      // jsPDF draws at any Y coordinate — content outside [0, PAGE_H] is simply invisible
+      const yOffset = -(page * maxY) + (page > 0 ? M : 0);
+
+      // Create a temporary renderer that offsets Y
+      // Since we can't easily offset, re-render at full scale with shifted positions
+      // by using a fresh approach: render to the tall doc and extract as image
+
+      // Pragmatic: use the internal pages from tallDoc
     }
 
-    // Simpler approach: render once, content overflows naturally in jsPDF
-    // jsPDF will clip at page boundary — we need to manually paginate
-    // Best approach: render at scale that fits ~2 pages worth, adding pages as needed
-    const finalDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    const scale = 1;
+    // Most reliable jsPDF multi-page approach: 
+    // Render at scale=1 on the tall doc, then convert each page-region to an image
+    // and place on A4 pages. However this loses text selectability.
 
-    // Render sections individually with page break detection
-    renderWithPageBreaks(finalDoc, d, template, scale, maxY, M);
-    finalDoc.save(getFileName(d, template));
+    // Better pragmatic approach: scale content to fit exactly N pages
+    // where each page uses the full available height
+    const multiScale = (maxY * pagesNeeded) / measuredY;
+    const multiDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    
+    // We need to render sections and break across pages
+    // Simplest working solution: render full content shifted per page
+    for (let page = 0; page < pagesNeeded; page++) {
+      if (page > 0) multiDoc.addPage();
+      // Use internal jsPDF translate by saving/restoring context
+      // jsPDF has no translate, so we modify the render functions...
+    }
+
+    // FINAL pragmatic approach that actually works with jsPDF:
+    // Scale to fit exactly 2 pages (or N pages) — render once per page with Y offset
+    // Since our renderers use absolute Y, we wrap them with an offset
+    renderMultiPage(multiDoc, d, template, pagesNeeded, maxY, M);
+    multiDoc.save(getFileName(d, template));
     return;
   }
 
   // Single page mode (default) — scale to fit
-  const measureDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  const measuredY = renderer(measureDoc, d, 1);
-
   let scale = 1;
   if (measuredY > maxY) {
     scale = Math.max(0.7, maxY / measuredY);
@@ -811,46 +824,62 @@ export function generateCV(data: CVData, template: TemplateId, pageMode: PageMod
   doc.save(getFileName(d, template));
 }
 
-/* ── Multi-page renderer: re-renders sections with page breaks ── */
-function renderWithPageBreaks(doc: jsPDF, data: CVData, template: TemplateId, scale: number, maxY: number, M: number): void {
-  // For multi-page, we render at scale=1 using a measuring pass per section
-  // then place each section, adding a page when needed
+/** Multi-page: renders content across N A4 pages at scale=1 using Y-offset trick */
+function renderMultiPage(doc: jsPDF, data: CVData, template: TemplateId, pages: number, maxY: number, M: number): void {
   const renderer = template === "classic" ? renderClassic : template === "modern" ? renderModern : renderMinimal;
 
-  // Simple approach: render full content, measure total height, 
-  // if it exceeds one page, render at scale=1 and add pages
-  const totalY = renderer(doc, data, scale);
+  for (let page = 0; page < pages; page++) {
+    if (page > 0) doc.addPage();
 
-  if (totalY > maxY) {
-    // Content overflowed — jsPDF doesn't auto-paginate, so we use a
-    // slightly reduced scale that fits ~2 pages and add a second page
-    // Actually, the simplest reliable approach: scale down to fit 2 pages
-    const pages = Math.ceil(totalY / maxY);
-    // Clear and re-render with proper pagination
-    // jsPDF doesn't support clearing, so create fresh
-    const freshDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-
-    // For 2-page CVs: render top half on page 1, bottom half on page 2
-    // Since our renderers draw linearly, we can split by using two render passes
-    // with Y-offset. But this is complex with jsPDF.
-    
-    // Pragmatic solution: scale to fit N pages where N = ceil(totalY/maxY)
-    // For 2 pages, scale = totalY / (maxY * 2) but we want scale=1
-    // Actually just let content render and manually add pages based on content height
-    
-    // Best pragmatic approach for now: if content is 1-2 pages, use scale ~0.85-1.0
-    // to make it fit nicely on 2 pages with good readability
-    const targetHeight = maxY * pages;
-    const newScale = Math.min(1, targetHeight / totalY);
-    
-    // We already rendered on doc, can't undo. The caller will use freshDoc.
-    // Actually the caller passed `doc` and we already rendered on it.
-    // Since we can't undo, we'll just accept the overflow — jsPDF clips at page boundary
-    // Add the needed extra pages
-    for (let i = 1; i < pages; i++) {
-      doc.addPage();
-    }
-    // Re-render on page 2 won't work easily with jsPDF's linear model
-    // The content is already on page 1 and will be clipped
+    // Create a proxy that offsets all Y coordinates
+    const offset = page * maxY - (page > 0 ? M : 0);
+    const proxy = createOffsetProxy(doc, offset, M, maxY, page);
+    renderer(proxy as any, data, 1);
   }
+}
+
+/** Creates a Proxy around jsPDF that shifts Y coordinates for multi-page rendering */
+function createOffsetProxy(doc: jsPDF, yOffset: number, topMargin: number, maxY: number, pageIndex: number): jsPDF {
+  // Simple approach: override text, line, rect, circle, roundedRect methods
+  // to subtract yOffset from Y params, and skip drawing if outside visible range
+  const pageTop = 0;
+  const pageBottom = maxY + topMargin;
+
+  const handler: ProxyHandler<jsPDF> = {
+    get(target, prop, receiver) {
+      const original = Reflect.get(target, prop, receiver);
+      if (typeof original !== "function") return original;
+
+      if (prop === "text") {
+        return function (text: any, x: number, y: number, options?: any) {
+          const adjustedY = y - yOffset;
+          if (adjustedY < pageTop - 5 || adjustedY > pageBottom + 5) return target;
+          return (target.text as any)(text, x, adjustedY, options);
+        };
+      }
+      if (prop === "line") {
+        return function (x1: number, y1: number, x2: number, y2: number) {
+          return target.line(x1, y1 - yOffset, x2, y2 - yOffset);
+        };
+      }
+      if (prop === "rect") {
+        return function (x: number, y: number, w: number, h: number, style?: string) {
+          return (target.rect as any)(x, y - yOffset, w, h, style);
+        };
+      }
+      if (prop === "circle") {
+        return function (x: number, y: number, r: number, style?: string) {
+          return (target.circle as any)(x, y - yOffset, r, style);
+        };
+      }
+      if (prop === "roundedRect") {
+        return function (x: number, y: number, w: number, h: number, rx: number, ry: number, style?: string) {
+          return (target.roundedRect as any)(x, y - yOffset, w, h, rx, ry, style);
+        };
+      }
+      return original.bind(target);
+    },
+  };
+
+  return new Proxy(doc, handler);
 }
