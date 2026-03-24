@@ -239,13 +239,25 @@ const ChatToBuild = () => {
                       </div>
                     )}
                     <div
-                      className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                      className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                         msg.role === "user"
                           ? "bg-primary text-primary-foreground rounded-br-md"
                           : "bg-secondary text-secondary-foreground rounded-bl-md"
                       }`}
                     >
-                      {content}
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+                          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                          em: ({ children }) => <em className="italic">{children}</em>,
+                          ul: ({ children }) => <ul className="list-disc ml-4 mb-1">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal ml-4 mb-1">{children}</ol>,
+                          li: ({ children }) => <li className="mb-0.5">{children}</li>,
+                          code: ({ children }) => <code className="bg-black/10 rounded px-1 text-xs">{children}</code>,
+                        }}
+                      >
+                        {content}
+                      </ReactMarkdown>
                     </div>
                     {msg.role === "user" && (
                       <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
