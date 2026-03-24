@@ -29,7 +29,7 @@ const AuthPage = () => {
           options: { emailRedirectTo: window.location.origin },
         });
         if (error) throw error;
-        toast.success("Check your email to verify your account!");
+        toast.success("Account created! Welcome aboard!");
       }
     } catch (err: any) {
       toast.error(err.message || "Authentication failed");
