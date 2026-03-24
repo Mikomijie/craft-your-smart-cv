@@ -56,6 +56,7 @@ const ChatToBuild = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MSG]);
   const [input, setInput] = useState("");
   const [cvData, setCvData] = useState<CVData>(defaultCV);
+  const [pageMode, setPageMode] = useState<PageMode>("single");
   const [isLoading, setIsLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
