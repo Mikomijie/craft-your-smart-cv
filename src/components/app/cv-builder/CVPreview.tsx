@@ -393,6 +393,7 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
   highlightedSections?: string[];
   previewId?: string;
 }) => {
+  const [template, setTemplate] = useState<TemplateId>("modern");
   const previewRef = useRef<HTMLDivElement>(null);
   const { personal, experience, education, skills, projects, certifications, extracurriculars } = data;
   const completeness = calcCompleteness(data);
