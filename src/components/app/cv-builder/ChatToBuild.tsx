@@ -187,7 +187,6 @@ const ChatToBuild = () => {
       createdAt: new Date().toISOString(),
     });
     localStorage.setItem("craftcv-list", JSON.stringify(saved));
-    toast.success("CV saved successfully!");
   };
 
   const displayContent = (msg: ChatMessage) => stripCvDataBlock(msg.content);
