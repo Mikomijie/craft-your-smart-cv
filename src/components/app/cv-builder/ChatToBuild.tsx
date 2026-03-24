@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import CVPreview from "./CVPreview";
 import type { CVData, ChatMessage } from "./types";
 import { defaultCV, uid } from "./types";
+import type { PageMode } from "./pdfGenerator";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -17,12 +18,12 @@ const INITIAL_MSG: ChatMessage = {
     "Hey! I'm going to help you build an amazing CV. Let's start simple — what's your name and what kind of role are you looking for?",
 };
 
-function extractCvData(text: string): CVData | null {
+function extractCvData(text: string): { cv: CVData; pageMode: PageMode } | null {
   const match = text.match(/```cv-data\s*\n([\s\S]*?)```/);
   if (!match) return null;
   try {
     const raw = JSON.parse(match[1]);
-    return {
+    const cv: CVData = {
       personal: { ...defaultCV.personal, ...raw.personal },
       experience: (raw.experience || []).map((e: any, i: number) => ({
         id: `exp-${i}`, company: e.company || "", role: e.role || "",
@@ -42,6 +43,8 @@ function extractCvData(text: string): CVData | null {
       })),
       extracurriculars: raw.extracurriculars || [],
     };
+    const pageMode: PageMode = raw.pagePreference === "multi" ? "multi" : "single";
+    return { cv, pageMode };
   } catch { return null; }
 }
 
@@ -53,6 +56,7 @@ const ChatToBuild = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MSG]);
   const [input, setInput] = useState("");
   const [cvData, setCvData] = useState<CVData>(defaultCV);
+  const [pageMode, setPageMode] = useState<PageMode>("single");
   const [isLoading, setIsLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -139,7 +143,7 @@ const ChatToBuild = () => {
               });
 
               const extracted = extractCvData(assistantContent);
-              if (extracted) setCvData(extracted);
+              if (extracted) { setCvData(extracted.cv); setPageMode(extracted.pageMode); }
             }
           } catch {
             textBuffer = line + "\n" + textBuffer;
@@ -165,7 +169,7 @@ const ChatToBuild = () => {
       }
 
       const finalData = extractCvData(assistantContent);
-      if (finalData) setCvData(finalData);
+      if (finalData) { setCvData(finalData.cv); setPageMode(finalData.pageMode); }
 
       setMessages((prev) =>
         prev.map((m) => m.id === assistantId ? { ...m, content: assistantContent } : m)
@@ -212,7 +216,7 @@ const ChatToBuild = () => {
           exit={{ opacity: 0, y: 20 }}
           className="mb-4"
         >
-          <CVPreview data={cvData} onSave={handleSave} showSave showDownload />
+          <CVPreview data={cvData} onSave={handleSave} showSave showDownload pageMode={pageMode} />
         </motion.div>
       )}
 
@@ -303,7 +307,7 @@ const ChatToBuild = () => {
 
         {/* Desktop CV Preview */}
         <div className="hidden lg:flex flex-col min-h-0">
-          <CVPreview data={cvData} onSave={handleSave} showSave showDownload />
+          <CVPreview data={cvData} onSave={handleSave} showSave showDownload pageMode={pageMode} />
         </div>
       </div>
     </div>

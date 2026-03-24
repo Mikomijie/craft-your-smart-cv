@@ -4,7 +4,7 @@ import { FileText, Mail, Phone, MapPin, Globe, Download, Linkedin, Github, Award
 import { Progress } from "@/components/ui/progress";
 import type { CVData } from "./types";
 import { toast } from "sonner";
-import { generateCV } from "./pdfGenerator";
+import { generateCV, type PageMode } from "./pdfGenerator";
 
 export type TemplateId = "modern" | "classic" | "minimal";
 
@@ -26,13 +26,14 @@ function cleanNameForOutput(name: string): string {
   return name.replace(/\s+\b(and|i|the|a|an|is|am|was|im|or|but|to|for|my|me|at|in)\s*$/i, "").trim();
 }
 
-const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highlightedSections, previewId }: {
+const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highlightedSections, previewId, pageMode = "single" }: {
   data: CVData;
   onSave?: () => void;
   showSave?: boolean;
   showDownload?: boolean;
   highlightedSections?: string[];
   previewId?: string;
+  pageMode?: PageMode;
 }) => {
   const [template, setTemplate] = useState<TemplateId>("modern");
   const { personal, experience, education, skills, projects, certifications, extracurriculars } = data;
@@ -249,7 +250,7 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
                 }
                 setDownloading(true);
                 try {
-                  generateCV(data, template);
+                  generateCV(data, template, pageMode);
                   toast.success("PDF downloaded!");
                 } catch (err) {
                   console.error(err);

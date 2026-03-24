@@ -741,9 +741,12 @@ function renderMinimal(doc: jsPDF, data: CVData, scale: number): number {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   MAIN EXPORT — auto-scale to fit one page
+   MAIN EXPORT — supports single-page (default) and multi-page
+   pageMode: "single" = scale to fit 1 page, "multi" = natural flow across pages
    ══════════════════════════════════════════════════════════════ */
-export function generateCV(data: CVData, template: TemplateId): void {
+export type PageMode = "single" | "multi";
+
+export function generateCV(data: CVData, template: TemplateId, pageMode: PageMode = "single"): void {
   const d = ensureSummary(data);
   const { personal: p, experience, education, skills } = d;
   if (!p.name && experience.length === 0 && education.length === 0 && skills.length === 0) {
@@ -752,13 +755,21 @@ export function generateCV(data: CVData, template: TemplateId): void {
 
   const renderer = template === "classic" ? renderClassic : template === "modern" ? renderModern : renderMinimal;
   const M = MARGINS[template];
-  const maxY = PAGE_H - M; // usable bottom
+  const maxY = PAGE_H - M;
 
-  // Pass 1: measure at scale=1
+  // Measure at scale=1
   const measureDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const measuredY = renderer(measureDoc, d, 1);
 
-  // Calculate scale to fit one page
+  if (pageMode === "multi" && measuredY > maxY) {
+    const pagesNeeded = Math.ceil(measuredY / maxY);
+    const multiDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    renderMultiPage(multiDoc, d, template, pagesNeeded, maxY, M);
+    multiDoc.save(getFileName(d, template));
+    return;
+  }
+
+  // Single page mode (default) — scale to fit
   let scale = 1;
   if (measuredY > maxY) {
     scale = Math.max(0.7, maxY / measuredY);
@@ -766,8 +777,67 @@ export function generateCV(data: CVData, template: TemplateId): void {
     scale = Math.min(1.15, (maxY * 0.88) / measuredY);
   }
 
-  // Pass 2: render final
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   renderer(doc, d, scale);
   doc.save(getFileName(d, template));
+}
+
+/** Multi-page: renders content across N A4 pages at scale=1 using Y-offset trick */
+function renderMultiPage(doc: jsPDF, data: CVData, template: TemplateId, pages: number, maxY: number, M: number): void {
+  const renderer = template === "classic" ? renderClassic : template === "modern" ? renderModern : renderMinimal;
+
+  for (let page = 0; page < pages; page++) {
+    if (page > 0) doc.addPage();
+
+    // Create a proxy that offsets all Y coordinates
+    const offset = page * maxY - (page > 0 ? M : 0);
+    const proxy = createOffsetProxy(doc, offset, M, maxY, page);
+    renderer(proxy as any, data, 1);
+  }
+}
+
+/** Creates a Proxy around jsPDF that shifts Y coordinates for multi-page rendering */
+function createOffsetProxy(doc: jsPDF, yOffset: number, topMargin: number, maxY: number, pageIndex: number): jsPDF {
+  // Simple approach: override text, line, rect, circle, roundedRect methods
+  // to subtract yOffset from Y params, and skip drawing if outside visible range
+  const pageTop = 0;
+  const pageBottom = maxY + topMargin;
+
+  const handler: ProxyHandler<jsPDF> = {
+    get(target, prop, receiver) {
+      const original = Reflect.get(target, prop, receiver);
+      if (typeof original !== "function") return original;
+
+      if (prop === "text") {
+        return function (text: any, x: number, y: number, options?: any) {
+          const adjustedY = y - yOffset;
+          if (adjustedY < pageTop - 5 || adjustedY > pageBottom + 5) return target;
+          return (target.text as any)(text, x, adjustedY, options);
+        };
+      }
+      if (prop === "line") {
+        return function (x1: number, y1: number, x2: number, y2: number) {
+          return target.line(x1, y1 - yOffset, x2, y2 - yOffset);
+        };
+      }
+      if (prop === "rect") {
+        return function (x: number, y: number, w: number, h: number, style?: string) {
+          return (target.rect as any)(x, y - yOffset, w, h, style);
+        };
+      }
+      if (prop === "circle") {
+        return function (x: number, y: number, r: number, style?: string) {
+          return (target.circle as any)(x, y - yOffset, r, style);
+        };
+      }
+      if (prop === "roundedRect") {
+        return function (x: number, y: number, w: number, h: number, rx: number, ry: number, style?: string) {
+          return (target.roundedRect as any)(x, y - yOffset, w, h, rx, ry, style);
+        };
+      }
+      return original.bind(target);
+    },
+  };
+
+  return new Proxy(doc, handler);
 }
