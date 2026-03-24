@@ -2,368 +2,785 @@ import jsPDF from "jspdf";
 import type { CVData } from "./types";
 import type { TemplateId } from "./CVPreview";
 
+/* ── Constants ─────────────────────────────────────────────── */
 const PAGE_W = 210;
 const PAGE_H = 297;
-const MARGIN = 14;
-const CONTENT_W = PAGE_W - MARGIN * 2;
-const USABLE_H = PAGE_H - MARGIN * 2;
+
+const MARGINS: Record<TemplateId, number> = {
+  classic: 18,
+  modern: 18,
+  minimal: 15,
+};
 
 function cleanName(name: string): string {
   return name.replace(/\s+\b(and|i|the|a|an|is|am|was|im|or|but|to|for|my|me|at|in)\s*$/i, "").trim();
 }
 
-function getFileName(data: CVData): string {
+function getFileName(data: CVData, template: TemplateId): string {
   const name = cleanName(data.personal.name?.trim() || "");
-  return name ? `${name} - CraftCV.pdf` : "CraftCV.pdf";
+  const tName = template === "classic" ? "Classic" : template === "modern" ? "Modern" : "Minimal";
+  return name ? `${name} - ${tName} - CraftCV.pdf` : `CraftCV - ${tName}.pdf`;
 }
 
 function wrap(doc: jsPDF, text: string, maxW: number): string[] {
   return doc.splitTextToSize(text, maxW) as string[];
 }
 
-const C = {
-  modern:  { pr: [37,99,235] as const, tx: [30,30,30] as const, mu: [100,100,100] as const, ln: [210,215,225] as const, ac: [235,243,255] as const, at: [37,99,235] as const },
-  classic: { pr: [100,50,20] as const, tx: [30,30,30] as const, mu: [90,90,90] as const, ln: [100,50,20] as const, ac: [250,245,238] as const, at: [100,50,20] as const },
-  minimal: { pr: [70,70,70] as const, tx: [30,30,30] as const, mu: [120,120,120] as const, ln: [200,200,200] as const, ac: [242,242,242] as const, at: [70,70,70] as const },
-};
+/* mm per pt: jsPDF uses mm, font sizes in pt. 1pt ≈ 0.3528mm */
+const PT = 0.3528;
 
-// ─── Sizing config that scales ───────────────────────────────
-interface SizeConfig {
-  nameSize: number;
-  titleSize: number;
-  sectionHeaderSize: number;
-  roleSize: number;
-  bodySize: number;
-  smallSize: number;
-  contactSize: number;
-  lineH: number;       // body line height
-  sectionGap: number;  // gap between sections
-  itemGap: number;     // gap between items in a section
-  headerGap: number;   // gap after section header line
-}
-
-function getBaseConfig(): SizeConfig {
-  return {
-    nameSize: 20, titleSize: 10.5, sectionHeaderSize: 9.5,
-    roleSize: 9.5, bodySize: 8.5, smallSize: 7.5, contactSize: 8,
-    lineH: 3.5, sectionGap: 5, itemGap: 2.5, headerGap: 4,
-  };
-}
-
-function scaleConfig(base: SizeConfig, factor: number): SizeConfig {
-  return {
-    nameSize: base.nameSize * factor,
-    titleSize: base.titleSize * factor,
-    sectionHeaderSize: base.sectionHeaderSize * factor,
-    roleSize: base.roleSize * factor,
-    bodySize: base.bodySize * factor,
-    smallSize: base.smallSize * factor,
-    contactSize: base.contactSize * factor,
-    lineH: base.lineH * factor,
-    sectionGap: base.sectionGap * factor,
-    itemGap: base.itemGap * factor,
-    headerGap: base.headerGap * factor,
-  };
-}
-
-// ─── Measure pass (dry run) ─────────────────────────────────
-function measureContent(doc: jsPDF, data: CVData, template: TemplateId, sz: SizeConfig): number {
+/* ══════════════════════════════════════════════════════════════
+   TEMPLATE 1 — CLASSIC (ATS Optimized)
+   ══════════════════════════════════════════════════════════════ */
+function generateClassic(doc: jsPDF, data: CVData, scale: number): void {
+  const M = MARGINS.classic;
+  const CW = PAGE_W - M * 2;
   const { personal: p, experience, education, skills, projects, certifications, extracurriculars } = data;
-  const isCl = template === "classic";
-  const bf = isCl ? "times" : "helvetica";
-  let y = 0;
+  const name = cleanName(p.name || "Your Name");
 
-  // Header
-  y += sz.nameSize * 0.4; // name height approx
-  if (p.title) y += sz.titleSize * 0.4 + 1;
+  // Scaled sizes (base sizes in pt, converted via scale)
+  const ns = 28 * scale;   // name
+  const ts = 14 * scale;   // title
+  const cs = 11 * scale;   // contact
+  const sh = 11 * scale;   // section header
+  const bs = 10.5 * scale; // body
+  const lh = bs * PT * 1.6; // line height
+  const secGap = 14 * PT * scale; // 14px between sections
+  const itemGap = 8 * PT * scale; // 8px between items
+  const bulletIndent = 12 * PT; // 12px indent
 
-  // Contact
-  const cp = [p.email, p.phone, p.location, p.linkedin, p.github].filter(Boolean);
-  if (cp.length) {
-    doc.setFont(bf, "normal").setFontSize(sz.contactSize);
-    const sep = template === "minimal" ? "  ·  " : "  |  ";
-    y += wrap(doc, cp.join(sep), CONTENT_W).length * (sz.lineH + 0.3) + 1;
+  let y = M;
+
+  // Name — centered, bold
+  doc.setFont("helvetica", "bold").setFontSize(ns);
+  doc.setTextColor(34, 34, 34);
+  doc.text(name, PAGE_W / 2, y, { align: "center" });
+  y += ns * PT * 1.1;
+
+  // Title — centered, grey
+  if (p.title) {
+    doc.setFont("helvetica", "normal").setFontSize(ts);
+    doc.setTextColor(102, 102, 102);
+    doc.text(p.title, PAGE_W / 2, y, { align: "center" });
+    y += ts * PT * 1.3;
   }
 
-  // Divider
-  y += 4;
+  // Contact — centered, pipes
+  const contacts = [p.email, p.phone, p.location, p.linkedin, p.github, p.website].filter(Boolean);
+  if (contacts.length) {
+    doc.setFont("helvetica", "normal").setFontSize(cs);
+    doc.setTextColor(102, 102, 102);
+    const contactStr = contacts.join("  |  ");
+    const lines = wrap(doc, contactStr, CW);
+    for (const l of lines) {
+      doc.text(l, PAGE_W / 2, y, { align: "center" });
+      y += cs * PT * 1.4;
+    }
+  }
+
+  // Thin grey line
+  y += 2;
+  doc.setDrawColor(180, 180, 180);
+  doc.setLineWidth(0.3);
+  doc.line(M, y, PAGE_W - M, y);
+  y += secGap;
+
+  // Helper: section header
+  const drawHeader = (title: string) => {
+    doc.setFont("helvetica", "bold").setFontSize(sh);
+    doc.setTextColor(34, 34, 34);
+    doc.text(title.toUpperCase(), M, y);
+    y += 1.5;
+    doc.setDrawColor(180, 180, 180);
+    doc.setLineWidth(0.25);
+    doc.line(M, y, PAGE_W - M, y);
+    y += sh * PT * 1.2;
+  };
 
   // Summary
   if (p.summary) {
-    doc.setFont(bf, "normal").setFontSize(sz.bodySize);
-    y += wrap(doc, p.summary, CONTENT_W).length * sz.lineH + sz.sectionGap;
+    doc.setFont("helvetica", "normal").setFontSize(bs);
+    doc.setTextColor(51, 51, 51);
+    for (const l of wrap(doc, p.summary, CW)) {
+      doc.text(l, M, y);
+      y += lh;
+    }
+    y += secGap;
   }
 
   // Experience
   if (experience.length) {
-    y += sz.sectionGap + sz.headerGap + 2; // section header
+    drawHeader("PROFESSIONAL EXPERIENCE");
     for (const e of experience) {
-      y += sz.roleSize * 0.4 + 1; // role line
-      if (e.company && template !== "minimal") y += sz.lineH + 0.5;
+      // Role bold + dates right
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(34, 34, 34);
+      doc.text(e.role || "", M, y);
+      if (e.startDate || e.endDate) {
+        doc.setFont("helvetica", "normal").setFontSize(cs * 0.9);
+        doc.setTextColor(102, 102, 102);
+        const ds = `${e.startDate || ""}${e.startDate && e.endDate ? " – " : ""}${e.endDate || "Present"}`;
+        doc.text(ds, PAGE_W - M, y, { align: "right" });
+      }
+      y += lh;
+      // Company
+      if (e.company) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(102, 102, 102);
+        doc.text(e.company, M, y);
+        y += lh;
+      }
+      // Bullets
       if (e.description) {
-        doc.setFont(bf, "normal").setFontSize(sz.bodySize);
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(51, 51, 51);
         for (const b of e.description.split("\n").filter(l => l.trim())) {
-          const clean = b.replace(/^[•\-]\s*/, "");
-          y += wrap(doc, `• ${clean}`, CONTENT_W - 4).length * sz.lineH;
+          const clean = b.replace(/^[•▪\-]\s*/, "");
+          const bLines = wrap(doc, `• ${clean}`, CW - bulletIndent);
+          for (const bl of bLines) {
+            doc.text(bl, M + bulletIndent, y);
+            y += lh;
+          }
         }
       }
-      y += sz.itemGap;
+      y += itemGap;
     }
+    y += secGap - itemGap;
   }
 
   // Education
   if (education.length) {
-    y += sz.sectionGap + sz.headerGap + 2;
+    drawHeader("EDUCATION");
     for (const e of education) {
-      y += sz.roleSize * 0.4 + 1;
-      if (e.school) y += sz.lineH + 0.5;
-      y += sz.itemGap;
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(34, 34, 34);
+      doc.text(e.degree || "", M, y);
+      if (e.endDate) {
+        doc.setFont("helvetica", "normal").setFontSize(cs * 0.9);
+        doc.setTextColor(102, 102, 102);
+        doc.text(e.endDate, PAGE_W - M, y, { align: "right" });
+      }
+      y += lh;
+      if (e.school) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(102, 102, 102);
+        doc.text(e.school, M, y);
+        y += lh;
+      }
+      y += itemGap;
     }
+    y += secGap - itemGap;
   }
 
-  // Skills
+  // Skills — plain text, comma separated
   if (skills.length) {
-    y += sz.sectionGap + sz.headerGap + 2;
-    if (template === "modern") {
-      doc.setFontSize(sz.smallSize);
-      let cx = 0; const ch = sz.smallSize * 0.6 + 2, cpd = 2.5, cg = 1.5;
-      let rows = 1;
-      for (const s of skills) {
-        const tw = doc.getTextWidth(s);
-        const cw = tw + cpd * 2;
-        if (cx + cw > CONTENT_W) { cx = 0; rows++; }
-        cx += cw + cg;
-      }
-      y += rows * (ch + cg) + 2;
-    } else {
-      doc.setFont(bf, "normal").setFontSize(sz.bodySize);
-      const sep = template === "minimal" ? "  ·  " : "  •  ";
-      y += wrap(doc, skills.join(sep), CONTENT_W).length * sz.lineH + 2;
+    drawHeader("SKILLS");
+    doc.setFont("helvetica", "normal").setFontSize(bs);
+    doc.setTextColor(51, 51, 51);
+    const skillText = skills.join(", ");
+    for (const l of wrap(doc, skillText, CW)) {
+      doc.text(l, M, y);
+      y += lh;
     }
+    y += secGap;
   }
 
   // Projects
   if (projects.length) {
-    y += sz.sectionGap + sz.headerGap + 2;
+    drawHeader("PROJECTS");
     for (const pr of projects) {
-      y += sz.roleSize * 0.4 + 1;
-      if (pr.description) { doc.setFont(bf, "normal").setFontSize(sz.bodySize); y += wrap(doc, pr.description, CONTENT_W).length * sz.lineH; }
-      if (pr.techStack.length) y += sz.lineH;
-      if (pr.link) y += sz.lineH;
-      y += sz.itemGap;
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(34, 34, 34);
+      doc.text(pr.name || "", M, y);
+      y += lh;
+      if (pr.description) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(51, 51, 51);
+        for (const l of wrap(doc, pr.description, CW)) {
+          doc.text(l, M, y);
+          y += lh;
+        }
+      }
+      if (pr.techStack.length) {
+        doc.setFont("helvetica", "italic").setFontSize(bs * 0.9);
+        doc.setTextColor(102, 102, 102);
+        doc.text("Tech: " + pr.techStack.join(", "), M, y);
+        y += lh;
+      }
+      y += itemGap;
     }
+    y += secGap - itemGap;
   }
 
   // Certifications
   if (certifications.length) {
-    y += sz.sectionGap + sz.headerGap + 2;
-    for (const cert of certifications) {
-      y += sz.smallSize * 0.4 + 1;
-      if (cert.issuer || cert.date) y += sz.lineH;
-      y += sz.itemGap * 0.5;
+    drawHeader("CERTIFICATIONS");
+    for (const c of certifications) {
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(34, 34, 34);
+      doc.text(c.name || "", M, y);
+      y += lh;
+      if (c.issuer || c.date) {
+        doc.setFont("helvetica", "normal").setFontSize(cs * 0.9);
+        doc.setTextColor(102, 102, 102);
+        doc.text([c.issuer, c.date].filter(Boolean).join(" • "), M, y);
+        y += lh;
+      }
+      y += itemGap * 0.5;
     }
+    y += secGap;
   }
 
   // Extracurriculars
   if (extracurriculars.length) {
-    y += sz.sectionGap + sz.headerGap + 2;
-    doc.setFont(bf, "normal").setFontSize(sz.bodySize);
+    drawHeader("ACTIVITIES");
+    doc.setFont("helvetica", "normal").setFontSize(bs);
+    doc.setTextColor(51, 51, 51);
     for (const item of extracurriculars) {
-      y += wrap(doc, `• ${item}`, CONTENT_W).length * sz.lineH;
+      for (const l of wrap(doc, `• ${item}`, CW - bulletIndent)) {
+        doc.text(l, M + bulletIndent, y);
+        y += lh;
+      }
     }
   }
-
-  return y;
 }
 
-function sectionHead(doc: jsPDF, title: string, y: number, t: TemplateId, sz: SizeConfig): number {
-  const c = C[t];
-  if (t === "classic") {
-    doc.setFont("times", "bold").setFontSize(sz.sectionHeaderSize);
-    doc.setTextColor(c.pr[0], c.pr[1], c.pr[2]);
-    doc.text(title.toUpperCase(), MARGIN, y);
-    y += 1; doc.setDrawColor(c.ln[0], c.ln[1], c.ln[2]); doc.setLineWidth(0.4); doc.line(MARGIN, y, PAGE_W - MARGIN, y); y += sz.headerGap;
-  } else if (t === "minimal") {
-    doc.setFont("helvetica", "normal").setFontSize(sz.smallSize);
-    doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]);
-    doc.text(title.toUpperCase(), MARGIN, y); y += sz.headerGap;
-  } else {
-    doc.setFont("helvetica", "bold").setFontSize(sz.sectionHeaderSize);
-    doc.setTextColor(c.pr[0], c.pr[1], c.pr[2]);
-    doc.text(title.toUpperCase(), MARGIN, y);
-    y += 1; doc.setDrawColor(c.ln[0], c.ln[1], c.ln[2]); doc.setLineWidth(0.2); doc.line(MARGIN, y, PAGE_W - MARGIN, y); y += sz.headerGap;
-  }
-  return y;
-}
-
-export function generateCV(data: CVData, template: TemplateId): void {
-  const c = C[template];
-  const isCl = template === "classic";
-  const bf = isCl ? "times" : "helvetica";
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+/* ══════════════════════════════════════════════════════════════
+   TEMPLATE 2 — MODERN (Blue Accent)
+   ══════════════════════════════════════════════════════════════ */
+function generateModern(doc: jsPDF, data: CVData, scale: number): void {
+  const M = MARGINS.modern;
+  const STRIPE_W = 8; // blue left stripe
+  const TEXT_L = M; // text starts at margin (stripe is decorative at edge)
+  const CW = PAGE_W - M * 2;
   const { personal: p, experience, education, skills, projects, certifications, extracurriculars } = data;
   const name = cleanName(p.name || "Your Name");
 
-  // ── Two-pass: measure then scale to fit one page ──
-  const baseSz = getBaseConfig();
-  let contentH = measureContent(doc, data, template, baseSz);
-  let scaleFactor = 1;
-  if (contentH > USABLE_H) {
-    scaleFactor = Math.max(0.7, USABLE_H / contentH);
-  } else if (contentH < USABLE_H * 0.65) {
-    // Content is too sparse — stretch spacing slightly (up to 1.3x)
-    scaleFactor = Math.min(1.3, USABLE_H * 0.92 / contentH);
+  const BLUE = [37, 99, 235] as const;     // #2563eb
+  const PILL_BG = [219, 234, 254] as const; // #dbeafe
+  const PILL_TX = [30, 64, 175] as const;   // #1e40af
+
+  const ns = 26 * scale;
+  const ts = 13 * scale;
+  const cs = 11 * scale;
+  const sh = 11 * scale;
+  const bs = 10.5 * scale;
+  const lh = bs * PT * 1.6;
+  const secGap = 16 * PT * scale;
+  const itemGap = 8 * PT * scale;
+  const bulletIndent = 12 * PT;
+
+  // Draw blue left stripe
+  doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
+  doc.rect(0, 0, STRIPE_W, PAGE_H, "F");
+
+  let y = M;
+
+  // Name — left, bold, dark
+  doc.setFont("helvetica", "bold").setFontSize(ns);
+  doc.setTextColor(17, 17, 17);
+  doc.text(name, TEXT_L, y);
+  y += ns * PT * 1.1;
+
+  // Title — left, blue
+  if (p.title) {
+    doc.setFont("helvetica", "normal").setFontSize(ts);
+    doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
+    doc.text(p.title, TEXT_L, y);
+    y += ts * PT * 1.3;
   }
-  const sz = scaleConfig(baseSz, scaleFactor);
 
-  let y = MARGIN;
-
-  // ── Header ──
-  if (isCl) {
-    doc.setFont("times", "bold").setFontSize(sz.nameSize); doc.setTextColor(c.tx[0], c.tx[1], c.tx[2]);
-    doc.text(name, PAGE_W / 2, y, { align: "center" }); y += 7;
-    if (p.title) { doc.setFont("times", "italic").setFontSize(sz.titleSize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]); doc.text(p.title, PAGE_W / 2, y, { align: "center" }); y += 5; }
-  } else if (template === "minimal") {
-    doc.setFont("helvetica", "normal").setFontSize(sz.nameSize); doc.setTextColor(c.tx[0], c.tx[1], c.tx[2]);
-    doc.text(name, MARGIN, y); y += 7;
-    if (p.title) { doc.setFontSize(sz.titleSize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]); doc.text(p.title, MARGIN, y); y += 5; }
-  } else {
-    doc.setFont("helvetica", "bold").setFontSize(sz.nameSize); doc.setTextColor(c.tx[0], c.tx[1], c.tx[2]);
-    doc.text(name, MARGIN, y); y += 7;
-    if (p.title) { doc.setFont("helvetica", "bold").setFontSize(sz.titleSize); doc.setTextColor(c.pr[0], c.pr[1], c.pr[2]); doc.text(p.title, MARGIN, y); y += 5; }
-  }
-
-  // ── Contact ──
-  const cp = [p.email, p.phone, p.location, p.linkedin, p.github].filter(Boolean);
-  if (cp.length) {
-    doc.setFont(bf, "normal").setFontSize(sz.contactSize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]);
-    const sep = template === "minimal" ? "  ·  " : "  |  ";
-    const lines = wrap(doc, cp.join(sep), CONTENT_W);
+  // Contact — left, grey, small
+  const contacts = [p.email, p.phone, p.location, p.linkedin, p.github, p.website].filter(Boolean);
+  if (contacts.length) {
+    doc.setFont("helvetica", "normal").setFontSize(cs);
+    doc.setTextColor(120, 120, 120);
+    const contactStr = contacts.join("  |  ");
+    const lines = wrap(doc, contactStr, CW);
     for (const l of lines) {
-      if (isCl) doc.text(l, PAGE_W / 2, y, { align: "center" }); else doc.text(l, MARGIN, y);
-      y += sz.lineH + 0.3;
+      doc.text(l, TEXT_L, y);
+      y += cs * PT * 1.4;
     }
   }
+  y += 2;
 
-  // ── Divider ──
-  y += 1;
-  if (template === "modern") { doc.setDrawColor(c.pr[0], c.pr[1], c.pr[2]); doc.setLineWidth(0.8); }
-  else if (isCl) { doc.setDrawColor(c.ln[0], c.ln[1], c.ln[2]); doc.setLineWidth(0.5); }
-  else { doc.setDrawColor(c.ln[0], c.ln[1], c.ln[2]); doc.setLineWidth(0.3); }
-  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
-  if (isCl) { y += 0.3; doc.line(MARGIN, y, PAGE_W - MARGIN, y); }
-  y += sz.sectionGap;
+  // Section header helper
+  const drawHeader = (title: string) => {
+    doc.setFont("helvetica", "bold").setFontSize(sh);
+    doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
+    // letter spacing approximation: add spaces
+    const spaced = title.toUpperCase().split("").join(String.fromCharCode(8202)); // hair space
+    doc.text(spaced, TEXT_L, y);
+    y += 1.5;
+    doc.setDrawColor(BLUE[0], BLUE[1], BLUE[2]);
+    doc.setLineWidth(0.3);
+    doc.line(TEXT_L, y, PAGE_W - M, y);
+    y += sh * PT * 1.2;
+  };
 
-  // ── Summary ──
+  // Summary
   if (p.summary) {
-    doc.setFont(bf, isCl ? "italic" : "normal").setFontSize(sz.bodySize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]);
-    for (const l of wrap(doc, p.summary, CONTENT_W)) { doc.text(l, MARGIN, y); y += sz.lineH; }
-    y += sz.sectionGap;
+    doc.setFont("helvetica", "normal").setFontSize(bs);
+    doc.setTextColor(51, 51, 51);
+    for (const l of wrap(doc, p.summary, CW)) {
+      doc.text(l, TEXT_L, y);
+      y += lh;
+    }
+    y += secGap;
   }
 
-  // ── Experience ──
+  // Experience
   if (experience.length) {
-    y = sectionHead(doc, isCl ? "Professional Experience" : "Experience", y, template, sz);
+    drawHeader("EXPERIENCE");
     for (const e of experience) {
-      doc.setFont(bf, "bold").setFontSize(sz.roleSize); doc.setTextColor(c.tx[0], c.tx[1], c.tx[2]);
-      const rt = template === "minimal" && e.company ? `${e.role} — ${e.company}` : (e.role || "");
-      doc.text(rt, MARGIN, y);
+      // Company bold + dates right
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(17, 17, 17);
+      doc.text(e.company || "", TEXT_L, y);
       if (e.startDate || e.endDate) {
-        doc.setFont(bf, isCl ? "italic" : "normal").setFontSize(sz.smallSize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]);
-        const ds = `${e.startDate || ""}${e.startDate ? " – " : ""}${e.endDate || "Present"}`;
-        doc.text(ds, PAGE_W - MARGIN, y, { align: "right" });
+        doc.setFont("helvetica", "normal").setFontSize(cs * 0.9);
+        doc.setTextColor(120, 120, 120);
+        const ds = `${e.startDate || ""}${e.startDate && e.endDate ? " – " : ""}${e.endDate || "Present"}`;
+        doc.text(ds, PAGE_W - M, y, { align: "right" });
       }
-      y += sz.lineH + 1;
-      if (e.company && template !== "minimal") {
-        doc.setFont(bf, isCl ? "italic" : "normal").setFontSize(sz.bodySize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]);
-        doc.text(e.company, MARGIN, y); y += sz.lineH + 0.5;
+      y += lh;
+      // Role in medium grey
+      if (e.role) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(100, 100, 100);
+        doc.text(e.role, TEXT_L, y);
+        y += lh;
       }
+      // Bullets with blue square ▪
       if (e.description) {
-        doc.setFont(bf, "normal").setFontSize(sz.bodySize); doc.setTextColor(68, 68, 68);
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(51, 51, 51);
         for (const b of e.description.split("\n").filter(l => l.trim())) {
-          const clean = b.replace(/^[•\-]\s*/, "");
-          for (const bl of wrap(doc, `• ${clean}`, CONTENT_W - 4)) { doc.text(bl, MARGIN + 2, y); y += sz.lineH; }
+          const clean = b.replace(/^[•▪\-]\s*/, "");
+          // Draw blue square
+          const sqSize = bs * PT * 0.5;
+          doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
+          doc.rect(TEXT_L + bulletIndent * 0.3, y - sqSize * 0.7, sqSize, sqSize, "F");
+          const bLines = wrap(doc, clean, CW - bulletIndent);
+          for (let i = 0; i < bLines.length; i++) {
+            doc.setTextColor(51, 51, 51);
+            doc.text(bLines[i], TEXT_L + bulletIndent, y);
+            y += lh;
+          }
         }
       }
-      y += sz.itemGap;
+      y += itemGap;
     }
-    y += sz.sectionGap - sz.itemGap;
+    y += secGap - itemGap;
   }
 
-  // ── Education ──
+  // Education
   if (education.length) {
-    y = sectionHead(doc, "Education", y, template, sz);
+    drawHeader("EDUCATION");
     for (const e of education) {
-      doc.setFont(bf, "bold").setFontSize(sz.roleSize); doc.setTextColor(c.tx[0], c.tx[1], c.tx[2]);
-      doc.text(e.degree || "", MARGIN, y);
-      if (e.endDate) { doc.setFont(bf, isCl ? "italic" : "normal").setFontSize(sz.smallSize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]); doc.text(e.endDate, PAGE_W - MARGIN, y, { align: "right" }); }
-      y += sz.lineH + 1;
-      if (e.school) { doc.setFont(bf, isCl ? "italic" : "normal").setFontSize(sz.bodySize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]); doc.text(e.school, MARGIN, y); y += sz.lineH + 0.5; }
-      y += sz.itemGap;
-    }
-    y += sz.sectionGap - sz.itemGap;
-  }
-
-  // ── Skills ──
-  if (skills.length) {
-    y = sectionHead(doc, "Skills", y, template, sz);
-    if (template === "modern") {
-      let cx = MARGIN;
-      const ch = sz.smallSize * 0.55 + 2, cpd = 2.5, cg = 1.5;
-      doc.setFontSize(sz.smallSize);
-      for (const s of skills) {
-        const tw = doc.getTextWidth(s);
-        const cw = tw + cpd * 2;
-        if (cx + cw > PAGE_W - MARGIN) { cx = MARGIN; y += ch + cg; }
-        doc.setFillColor(c.ac[0], c.ac[1], c.ac[2]);
-        doc.roundedRect(cx, y - ch * 0.65, cw, ch, 1.2, 1.2, "F");
-        doc.setFont("helvetica", "bold"); doc.setTextColor(c.at[0], c.at[1], c.at[2]);
-        doc.text(s, cx + cpd, y);
-        cx += cw + cg;
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(17, 17, 17);
+      doc.text(e.degree || "", TEXT_L, y);
+      if (e.endDate) {
+        doc.setFont("helvetica", "normal").setFontSize(cs * 0.9);
+        doc.setTextColor(120, 120, 120);
+        doc.text(e.endDate, PAGE_W - M, y, { align: "right" });
       }
-      y += ch + sz.sectionGap;
-    } else {
-      doc.setFont(bf, "normal").setFontSize(sz.bodySize); doc.setTextColor(68, 68, 68);
-      const sep = template === "minimal" ? "  ·  " : "  •  ";
-      for (const l of wrap(doc, skills.join(sep), CONTENT_W)) { doc.text(l, MARGIN, y); y += sz.lineH; }
-      y += sz.sectionGap;
+      y += lh;
+      if (e.school) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(100, 100, 100);
+        doc.text(e.school, TEXT_L, y);
+        y += lh;
+      }
+      y += itemGap;
     }
+    y += secGap - itemGap;
   }
 
-  // ── Projects ──
+  // Skills — pill tags
+  if (skills.length) {
+    drawHeader("SKILLS");
+    let cx = TEXT_L;
+    const pillH = bs * PT + 3;
+    const pillPad = 3;
+    const pillGap = 2;
+    doc.setFontSize(bs * 0.9);
+    for (const s of skills) {
+      const tw = doc.getTextWidth(s);
+      const pw = tw + pillPad * 2;
+      if (cx + pw > PAGE_W - M) {
+        cx = TEXT_L;
+        y += pillH + pillGap;
+      }
+      // Pill background
+      doc.setFillColor(PILL_BG[0], PILL_BG[1], PILL_BG[2]);
+      doc.roundedRect(cx, y - pillH * 0.6, pw, pillH, 1.5, 1.5, "F");
+      // Pill text
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(PILL_TX[0], PILL_TX[1], PILL_TX[2]);
+      doc.text(s, cx + pillPad, y + pillH * 0.15);
+      cx += pw + pillGap;
+    }
+    y += pillH + secGap;
+  }
+
+  // Projects
   if (projects.length) {
-    y = sectionHead(doc, "Projects", y, template, sz);
+    drawHeader("PROJECTS");
     for (const pr of projects) {
-      doc.setFont(bf, "bold").setFontSize(sz.roleSize); doc.setTextColor(c.tx[0], c.tx[1], c.tx[2]);
-      doc.text(pr.name || "", MARGIN, y); y += sz.lineH + 1;
-      if (pr.description) { doc.setFont(bf, "normal").setFontSize(sz.bodySize); doc.setTextColor(68, 68, 68); for (const l of wrap(doc, pr.description, CONTENT_W)) { doc.text(l, MARGIN, y); y += sz.lineH; } }
-      if (pr.techStack.length) { doc.setFont(bf, "italic").setFontSize(sz.smallSize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]); doc.text(pr.techStack.join(", "), MARGIN, y); y += sz.lineH; }
-      if (pr.link) { doc.setFont(bf, "normal").setFontSize(sz.smallSize); doc.setTextColor(c.pr[0], c.pr[1], c.pr[2]); doc.text(pr.link, MARGIN, y); y += sz.lineH; }
-      y += sz.itemGap;
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(17, 17, 17);
+      doc.text(pr.name || "", TEXT_L, y);
+      y += lh;
+      if (pr.description) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(51, 51, 51);
+        for (const l of wrap(doc, pr.description, CW)) {
+          doc.text(l, TEXT_L, y);
+          y += lh;
+        }
+      }
+      if (pr.techStack.length) {
+        doc.setFont("helvetica", "italic").setFontSize(bs * 0.9);
+        doc.setTextColor(100, 100, 100);
+        doc.text(pr.techStack.join(", "), TEXT_L, y);
+        y += lh;
+      }
+      y += itemGap;
     }
-    y += sz.sectionGap - sz.itemGap;
+    y += secGap - itemGap;
   }
 
-  // ── Certifications ──
+  // Certifications
   if (certifications.length) {
-    y = sectionHead(doc, "Certifications", y, template, sz);
-    for (const cert of certifications) {
-      doc.setFont(bf, "bold").setFontSize(sz.bodySize); doc.setTextColor(c.tx[0], c.tx[1], c.tx[2]);
-      doc.text(cert.name || "", MARGIN, y); y += sz.lineH;
-      if (cert.issuer || cert.date) { doc.setFont(bf, "normal").setFontSize(sz.smallSize); doc.setTextColor(c.mu[0], c.mu[1], c.mu[2]); doc.text([cert.issuer, cert.date].filter(Boolean).join(" • "), MARGIN, y); y += sz.lineH; }
-      y += sz.itemGap * 0.5;
+    drawHeader("CERTIFICATIONS");
+    for (const c of certifications) {
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(17, 17, 17);
+      doc.text(c.name || "", TEXT_L, y);
+      y += lh;
+      if (c.issuer || c.date) {
+        doc.setFont("helvetica", "normal").setFontSize(cs * 0.9);
+        doc.setTextColor(120, 120, 120);
+        doc.text([c.issuer, c.date].filter(Boolean).join(" • "), TEXT_L, y);
+        y += lh;
+      }
+      y += itemGap * 0.5;
     }
-    y += sz.sectionGap - sz.itemGap;
+    y += secGap;
   }
 
-  // ── Extracurriculars ──
+  // Extracurriculars
   if (extracurriculars.length) {
-    y = sectionHead(doc, isCl ? "Activities" : "Extracurriculars", y, template, sz);
-    doc.setFont(bf, "normal").setFontSize(sz.bodySize); doc.setTextColor(68, 68, 68);
+    drawHeader("ACTIVITIES");
+    doc.setFont("helvetica", "normal").setFontSize(bs);
+    doc.setTextColor(51, 51, 51);
     for (const item of extracurriculars) {
-      for (const l of wrap(doc, `• ${item}`, CONTENT_W)) { doc.text(l, MARGIN, y); y += sz.lineH; }
+      const sqSize = bs * PT * 0.5;
+      doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
+      doc.rect(TEXT_L + bulletIndent * 0.3, y - sqSize * 0.7, sqSize, sqSize, "F");
+      for (const l of wrap(doc, item, CW - bulletIndent)) {
+        doc.setTextColor(51, 51, 51);
+        doc.text(l, TEXT_L + bulletIndent, y);
+        y += lh;
+      }
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TEMPLATE 3 — MINIMAL (Two Column)
+   ══════════════════════════════════════════════════════════════ */
+function generateMinimal(doc: jsPDF, data: CVData, scale: number): void {
+  const M = MARGINS.minimal;
+  const { personal: p, experience, education, skills, projects, certifications, extracurriculars } = data;
+  const name = cleanName(p.name || "Your Name");
+
+  const BLUE = [37, 99, 235] as const;
+  const SIDEBAR_BG = [248, 249, 250] as const; // #f8f9fa
+  const totalW = PAGE_W - M * 2;
+  const mainW = totalW * 0.62;
+  const sideW = totalW * 0.35;
+  const gutter = totalW * 0.03;
+  const sideX = M + mainW + gutter;
+
+  const ns = 24 * scale;
+  const ts = 12 * scale;
+  const sh = 10 * scale;
+  const bs = 10.5 * scale;
+  const cs = 10 * scale;
+  const lh = bs * PT * 1.6;
+  const secGap = 20 * PT * scale;
+  const itemGap = 8 * PT * scale;
+  const bulletIndent = 10 * PT;
+
+  // Sidebar background
+  doc.setFillColor(SIDEBAR_BG[0], SIDEBAR_BG[1], SIDEBAR_BG[2]);
+  doc.rect(sideX - 3, 0, sideW + 3 + M, PAGE_H, "F");
+
+  let yMain = M;
+  let ySide = M;
+
+  // ── HEADER (main column) ──
+  doc.setFont("helvetica", "bold").setFontSize(ns);
+  doc.setTextColor(34, 34, 34);
+  doc.text(name, M, yMain);
+  yMain += ns * PT * 1.1;
+
+  if (p.title) {
+    doc.setFont("helvetica", "normal").setFontSize(ts);
+    doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
+    doc.text(p.title, M, yMain);
+    yMain += ts * PT * 1.5;
+  }
+  yMain += secGap * 0.5;
+
+  // Section header helpers
+  const drawMainHeader = (title: string) => {
+    doc.setFont("helvetica", "normal").setFontSize(sh);
+    doc.setTextColor(136, 136, 136);
+    // Small caps approximation with letter spacing
+    const spaced = title.toUpperCase().split("").join(String.fromCharCode(8202) + String.fromCharCode(8202));
+    doc.text(spaced, M, yMain);
+    yMain += sh * PT * 1.5;
+  };
+
+  const drawSideHeader = (title: string) => {
+    doc.setFont("helvetica", "normal").setFontSize(sh);
+    doc.setTextColor(136, 136, 136);
+    const spaced = title.toUpperCase().split("").join(String.fromCharCode(8202) + String.fromCharCode(8202));
+    doc.text(spaced, sideX, ySide);
+    ySide += sh * PT * 1.5;
+  };
+
+  // ── SIDEBAR ──
+
+  // Contact info
+  drawSideHeader("CONTACT");
+  const contacts = [
+    p.email && `${p.email}`,
+    p.phone && `${p.phone}`,
+    p.location && `${p.location}`,
+    p.linkedin && `${p.linkedin}`,
+    p.github && `${p.github}`,
+    p.website && `${p.website}`,
+  ].filter(Boolean) as string[];
+
+  doc.setFont("helvetica", "normal").setFontSize(cs);
+  doc.setTextColor(68, 68, 68);
+  for (const c of contacts) {
+    const lines = wrap(doc, c, sideW);
+    for (const l of lines) {
+      doc.text(l, sideX, ySide);
+      ySide += cs * PT * 1.5;
+    }
+    ySide += 1;
+  }
+  ySide += secGap;
+
+  // Skills — plain text list with blue dot
+  if (skills.length) {
+    drawSideHeader("SKILLS");
+    doc.setFont("helvetica", "normal").setFontSize(bs);
+    for (const s of skills) {
+      // Blue dot
+      doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
+      doc.circle(sideX + 1.5, ySide - bs * PT * 0.25, 0.8, "F");
+      doc.setTextColor(51, 51, 51);
+      doc.text(s, sideX + 5, ySide);
+      ySide += lh * 1.1;
+    }
+    ySide += secGap;
+  }
+
+  // Certifications in sidebar
+  if (certifications.length) {
+    drawSideHeader("CERTIFICATIONS");
+    for (const c of certifications) {
+      doc.setFont("helvetica", "bold").setFontSize(bs * 0.95);
+      doc.setTextColor(34, 34, 34);
+      const certLines = wrap(doc, c.name || "", sideW);
+      for (const l of certLines) {
+        doc.text(l, sideX, ySide);
+        ySide += lh;
+      }
+      if (c.issuer || c.date) {
+        doc.setFont("helvetica", "normal").setFontSize(cs * 0.9);
+        doc.setTextColor(136, 136, 136);
+        doc.text([c.issuer, c.date].filter(Boolean).join(" • "), sideX, ySide);
+        ySide += lh;
+      }
+      ySide += itemGap * 0.5;
+    }
+    ySide += secGap;
+  }
+
+  // Extracurriculars in sidebar
+  if (extracurriculars.length) {
+    drawSideHeader("ACTIVITIES");
+    doc.setFont("helvetica", "normal").setFontSize(bs);
+    doc.setTextColor(51, 51, 51);
+    for (const item of extracurriculars) {
+      doc.setFillColor(BLUE[0], BLUE[1], BLUE[2]);
+      doc.circle(sideX + 1.5, ySide - bs * PT * 0.25, 0.8, "F");
+      const lines = wrap(doc, item, sideW - 6);
+      for (const l of lines) {
+        doc.text(l, sideX + 5, ySide);
+        ySide += lh;
+      }
+      ySide += itemGap * 0.3;
     }
   }
 
-  doc.save(getFileName(data));
+  // ── MAIN COLUMN ──
+
+  // Summary
+  if (p.summary) {
+    doc.setFont("helvetica", "normal").setFontSize(bs);
+    doc.setTextColor(68, 68, 68);
+    for (const l of wrap(doc, p.summary, mainW)) {
+      doc.text(l, M, yMain);
+      yMain += lh;
+    }
+    yMain += secGap;
+  }
+
+  // Experience
+  if (experience.length) {
+    drawMainHeader("EXPERIENCE");
+    for (const e of experience) {
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(34, 34, 34);
+      doc.text(e.role || "", M, yMain);
+      if (e.startDate || e.endDate) {
+        doc.setFont("helvetica", "normal").setFontSize(cs * 0.9);
+        doc.setTextColor(136, 136, 136);
+        const ds = `${e.startDate || ""}${e.startDate && e.endDate ? " – " : ""}${e.endDate || "Present"}`;
+        doc.text(ds, M + mainW, yMain, { align: "right" });
+      }
+      yMain += lh;
+      if (e.company) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(136, 136, 136);
+        doc.text(e.company, M, yMain);
+        yMain += lh;
+      }
+      if (e.description) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(51, 51, 51);
+        for (const b of e.description.split("\n").filter(l => l.trim())) {
+          const clean = b.replace(/^[•▪\-]\s*/, "");
+          const bLines = wrap(doc, `• ${clean}`, mainW - bulletIndent);
+          for (const bl of bLines) {
+            doc.text(bl, M + bulletIndent, yMain);
+            yMain += lh;
+          }
+        }
+      }
+      yMain += itemGap;
+    }
+    yMain += secGap - itemGap;
+  }
+
+  // Education
+  if (education.length) {
+    drawMainHeader("EDUCATION");
+    for (const e of education) {
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(34, 34, 34);
+      doc.text(e.degree || "", M, yMain);
+      if (e.endDate) {
+        doc.setFont("helvetica", "normal").setFontSize(cs * 0.9);
+        doc.setTextColor(136, 136, 136);
+        doc.text(e.endDate, M + mainW, yMain, { align: "right" });
+      }
+      yMain += lh;
+      if (e.school) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(136, 136, 136);
+        doc.text(e.school, M, yMain);
+        yMain += lh;
+      }
+      yMain += itemGap;
+    }
+    yMain += secGap - itemGap;
+  }
+
+  // Projects
+  if (projects.length) {
+    drawMainHeader("PROJECTS");
+    for (const pr of projects) {
+      doc.setFont("helvetica", "bold").setFontSize(bs);
+      doc.setTextColor(34, 34, 34);
+      doc.text(pr.name || "", M, yMain);
+      yMain += lh;
+      if (pr.description) {
+        doc.setFont("helvetica", "normal").setFontSize(bs);
+        doc.setTextColor(51, 51, 51);
+        for (const l of wrap(doc, pr.description, mainW)) {
+          doc.text(l, M, yMain);
+          yMain += lh;
+        }
+      }
+      if (pr.techStack.length) {
+        doc.setFont("helvetica", "italic").setFontSize(bs * 0.9);
+        doc.setTextColor(136, 136, 136);
+        doc.text(pr.techStack.join(", "), M, yMain);
+        yMain += lh;
+      }
+      if (pr.link) {
+        doc.setFont("helvetica", "normal").setFontSize(bs * 0.9);
+        doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
+        doc.text(pr.link, M, yMain);
+        yMain += lh;
+      }
+      yMain += itemGap;
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MAIN EXPORT — measures, scales, renders
+   ══════════════════════════════════════════════════════════════ */
+export function generateCV(data: CVData, template: TemplateId): void {
+  // Guard: check content exists
+  const { personal: p, experience, education, skills } = data;
+  if (!p.name && experience.length === 0 && education.length === 0 && skills.length === 0) {
+    return;
+  }
+
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+
+  // Two-pass: first render to measure, then scale and re-render
+  // For simplicity with the template refactor, we do a single pass with scale=1
+  // and rely on the generous spacing to fit. For extreme content, we scale down.
+  const testDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  
+  // Quick height estimation by rendering to a test doc
+  const renderer = template === "classic" ? generateClassic : template === "modern" ? generateModern : generateMinimal;
+  renderer(testDoc, data, 1);
+
+  // Check if last text position exceeds page — crude but effective
+  // jsPDF doesn't expose cursor, so we trust the generous spacing.
+  // For safety, scale down if there's a lot of content
+  const sectionCount = [
+    p.summary ? 1 : 0,
+    experience.length,
+    education.length,
+    skills.length > 0 ? 1 : 0,
+    data.projects.length,
+    data.certifications.length,
+    data.extracurriculars.length > 0 ? 1 : 0,
+  ].reduce((a, b) => a + b, 0);
+
+  let scale = 1;
+  if (sectionCount > 12) scale = 0.85;
+  else if (sectionCount > 9) scale = 0.9;
+  else if (sectionCount > 6) scale = 0.95;
+  // If very sparse, stretch slightly
+  if (sectionCount <= 3) scale = 1.1;
+
+  renderer(doc, data, scale);
+  doc.save(getFileName(data, template));
 }
