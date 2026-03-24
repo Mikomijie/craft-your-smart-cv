@@ -250,7 +250,7 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
                 }
                 setDownloading(true);
                 try {
-                  generateCV(data, template);
+                  generateCV(data, template, pageMode);
                   toast.success("PDF downloaded!");
                 } catch (err) {
                   console.error(err);
