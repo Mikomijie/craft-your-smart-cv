@@ -340,17 +340,17 @@ const handleDownloadPDF = async (data: CVData, template: TemplateId) => {
     container.style.left = "0";
     container.style.top = "0";
     container.style.width = "794px"; // A4 width at 96dpi
+    container.style.background = "#ffffff";
     container.style.zIndex = "-9999";
-    container.style.opacity = "0";
     container.style.pointerEvents = "none";
+    container.style.overflow = "hidden";
     document.body.appendChild(container);
-    // Allow browser to layout the content
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
     const opt = {
       margin: [18, 18, 18, 18],
       filename: getFileName(data),
       image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true, backgroundColor: "#ffffff" },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
     };
     await window.html2pdf().set(opt).from(container).save();
