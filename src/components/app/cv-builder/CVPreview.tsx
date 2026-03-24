@@ -336,16 +336,21 @@ const handleDownloadPDF = async (data: CVData, template: TemplateId) => {
     await loadHtml2Pdf();
     const container = document.createElement("div");
     container.innerHTML = htmlContent;
-    container.style.position = "absolute";
-    container.style.left = "-9999px";
+    container.style.position = "fixed";
+    container.style.left = "0";
     container.style.top = "0";
-    container.style.width = "210mm";
+    container.style.width = "794px"; // A4 width at 96dpi
+    container.style.zIndex = "-9999";
+    container.style.opacity = "0";
+    container.style.pointerEvents = "none";
     document.body.appendChild(container);
+    // Allow browser to layout the content
+    await new Promise((r) => setTimeout(r, 100));
     const opt = {
       margin: [18, 18, 18, 18],
       filename: getFileName(data),
       image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true, width: container.scrollWidth },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
     };
     await window.html2pdf().set(opt).from(container).save();
