@@ -2,7 +2,7 @@ import { motion, useInView } from "framer-motion";
 import { Link } from "react-router-dom";
 import { FileText, MessageSquare, ClipboardPaste, Download, ArrowRight, Upload, Play } from "lucide-react";
 import { useRef } from "react";
-import { GlowingOrbs, DriftingWords, CircuitLines } from "@/components/LandingBackgroundLayers";
+import { GlowingOrbs } from "@/components/LandingBackgroundLayers";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
