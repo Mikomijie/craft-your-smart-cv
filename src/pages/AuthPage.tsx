@@ -41,6 +41,7 @@ const AuthPage = () => {
         });
         if (error) throw error;
         toast.success("Account created! Welcome aboard!");
+        navigate("/app");
       }
     } catch (err: any) {
       toast.error(err.message || "Authentication failed");
