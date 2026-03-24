@@ -4,7 +4,7 @@ import { FileText, Mail, Phone, MapPin, Globe, Download, Linkedin, Github, Award
 import { Progress } from "@/components/ui/progress";
 import type { CVData } from "./types";
 import { toast } from "sonner";
-import { generateCV } from "./pdfGenerator";
+import { generateCV, type PageMode } from "./pdfGenerator";
 
 export type TemplateId = "modern" | "classic" | "minimal";
 
