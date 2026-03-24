@@ -39,7 +39,8 @@ After each user message, you MUST output a JSON block with the COMPLETE accumula
   "skills": [],
   "projects": [{ "name": "", "description": "", "techStack": [], "link": "" }],
   "certifications": [{ "name": "", "issuer": "", "date": "" }],
-  "extracurriculars": []
+  "extracurriculars": [],
+  "pagePreference": "single"
 }
 \`\`\`
 

@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import CVPreview from "./CVPreview";
 import type { CVData, ChatMessage } from "./types";
 import { defaultCV, uid } from "./types";
+import type { PageMode } from "./pdfGenerator";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 
