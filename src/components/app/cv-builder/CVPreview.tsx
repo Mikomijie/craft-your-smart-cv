@@ -601,7 +601,7 @@ const CVPreview = ({ data, onSave, showSave = false, showDownload = false, highl
         <div className="flex gap-2 mt-4">
           {showDownload && (
             <button
-              onClick={() => handleDownloadPDF(data, template)}
+              onClick={() => handleDownloadPDF(previewRef.current, data, template)}
               className="flex-1 flex items-center justify-center gap-2 bg-primary text-primary-foreground py-3 rounded-xl text-sm font-semibold transition-all duration-300 hover:brightness-110 active:scale-[0.97]"
             >
               <Download className="w-4 h-4" /> Download PDF
