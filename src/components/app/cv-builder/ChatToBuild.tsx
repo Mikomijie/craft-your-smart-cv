@@ -169,7 +169,7 @@ const ChatToBuild = () => {
       }
 
       const finalData = extractCvData(assistantContent);
-      if (finalData) setCvData(finalData);
+      if (finalData) { setCvData(finalData.cv); setPageMode(finalData.pageMode); }
 
       setMessages((prev) =>
         prev.map((m) => m.id === assistantId ? { ...m, content: assistantContent } : m)
