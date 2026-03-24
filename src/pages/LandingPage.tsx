@@ -2,17 +2,16 @@ import { motion, useInView } from "framer-motion";
 import { Link } from "react-router-dom";
 import { FileText, MessageSquare, ClipboardPaste, Download, ArrowRight, Upload, Play } from "lucide-react";
 import { useRef } from "react";
-import { GlowingOrbs, DriftingWords, CircuitLines } from "@/components/LandingBackgroundLayers";
+import { GlowingOrbs } from "@/components/LandingBackgroundLayers";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
 const fadeUp = (delay = 0) => ({
-  hidden: { opacity: 0, y: 20, filter: "blur(4px)" },
+  hidden: { opacity: 0, y: 12 },
   visible: {
     opacity: 1,
     y: 0,
-    filter: "blur(0px)",
-    transition: { delay, duration: 0.6, ease },
+    transition: { delay, duration: 0.35, ease },
   },
 });
 
@@ -85,8 +84,6 @@ const LandingPage = () => {
     <div className="landing-section min-h-screen relative overflow-hidden">
       {/* Background layers */}
       <GlowingOrbs />
-      <DriftingWords />
-      <CircuitLines />
 
       {/* ═══ Nav ═══ */}
       <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
