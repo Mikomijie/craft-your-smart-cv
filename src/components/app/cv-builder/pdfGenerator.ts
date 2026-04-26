@@ -742,7 +742,7 @@ function renderMinimal(doc: jsPDF, data: CVData, scale: number): number {
 
 /* ══════════════════════════════════════════════════════════════
    MAIN EXPORT — supports single-page (default) and multi-page
-   pageMode: "single" = scale to fit 1 page, "multi" = natural flow across pages
+   pageMode: "single" = scale to fit 1 page, "multi" = flow with smart breaks
    ══════════════════════════════════════════════════════════════ */
 export type PageMode = "single" | "multi";
 
@@ -762,9 +762,8 @@ export function generateCV(data: CVData, template: TemplateId, pageMode: PageMod
   const measuredY = renderer(measureDoc, d, 1);
 
   if (pageMode === "multi" && measuredY > maxY) {
-    const pagesNeeded = Math.ceil(measuredY / maxY);
     const multiDoc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    renderMultiPage(multiDoc, d, template, pagesNeeded, maxY, M);
+    renderMultiPage(multiDoc, d, template, maxY, M);
     multiDoc.save(getFileName(d, template));
     return;
   }
@@ -782,62 +781,202 @@ export function generateCV(data: CVData, template: TemplateId, pageMode: PageMod
   doc.save(getFileName(d, template));
 }
 
-/** Multi-page: renders content across N A4 pages at scale=1 using Y-offset trick */
-function renderMultiPage(doc: jsPDF, data: CVData, template: TemplateId, pages: number, maxY: number, M: number): void {
+/**
+ * Multi-page renderer using a recording + smart-break approach.
+ *
+ * Step 1: Render once into a "recording" jsPDF proxy that captures every
+ *         draw call along with its Y position, while the real renderer
+ *         calls a `breakpoint(itemHeight)` hook between logical items.
+ * Step 2: Group draw calls into "items" delimited by breakpoints. Place
+ *         each item on the current page if it fits, otherwise start a new
+ *         page so items are never split mid-content.
+ */
+type DrawOp = {
+  kind: "text" | "line" | "rect" | "circle" | "roundedRect" | "setFont" | "setFontSize" | "setTextColor" | "setFillColor" | "setDrawColor" | "setLineWidth";
+  args: any[];
+  y?: number; // primary y for drawing ops, used for grouping + offset
+};
+
+function renderMultiPage(doc: jsPDF, data: CVData, template: TemplateId, maxY: number, M: number): void {
   const renderer = template === "classic" ? renderClassic : template === "modern" ? renderModern : renderMinimal;
 
-  for (let page = 0; page < pages; page++) {
-    if (page > 0) doc.addPage();
+  // ── Step 1: Record all draw ops ──
+  const ops: DrawOp[] = [];
+  const recorder = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  const proxy = new Proxy(recorder, {
+    get(target, prop) {
+      const original: any = (target as any)[prop];
+      if (typeof original !== "function") return original;
+      const name = prop as string;
 
-    // Create a proxy that offsets all Y coordinates
-    const offset = page * maxY - (page > 0 ? M : 0);
-    const proxy = createOffsetProxy(doc, offset, M, maxY, page);
-    renderer(proxy as any, data, 1);
+      if (name === "text") {
+        return function (text: any, x: number, y: number, options?: any) {
+          ops.push({ kind: "text", args: [text, x, y, options], y });
+          return target;
+        };
+      }
+      if (name === "line") {
+        return function (x1: number, y1: number, x2: number, y2: number) {
+          ops.push({ kind: "line", args: [x1, y1, x2, y2], y: y1 });
+          return target;
+        };
+      }
+      if (name === "rect") {
+        return function (x: number, y: number, w: number, h: number, style?: string) {
+          // Skip full-page background rects (they cover the whole page) — we'll redraw per page
+          if (h >= PAGE_H * 0.9) {
+            ops.push({ kind: "rect", args: [x, y, w, h, style], y: -1 });
+          } else {
+            ops.push({ kind: "rect", args: [x, y, w, h, style], y });
+          }
+          return target;
+        };
+      }
+      if (name === "circle") {
+        return function (x: number, y: number, r: number, style?: string) {
+          ops.push({ kind: "circle", args: [x, y, r, style], y });
+          return target;
+        };
+      }
+      if (name === "roundedRect") {
+        return function (x: number, y: number, w: number, h: number, rx: number, ry: number, style?: string) {
+          ops.push({ kind: "roundedRect", args: [x, y, w, h, rx, ry, style], y });
+          return target;
+        };
+      }
+      if (name === "setFont") {
+        return function (...args: any[]) { ops.push({ kind: "setFont", args }); return target.setFont.apply(target, args as any); };
+      }
+      if (name === "setFontSize") {
+        return function (...args: any[]) { ops.push({ kind: "setFontSize", args }); return target.setFontSize.apply(target, args as any); };
+      }
+      if (name === "setTextColor") {
+        return function (...args: any[]) { ops.push({ kind: "setTextColor", args }); return (target.setTextColor as any).apply(target, args); };
+      }
+      if (name === "setFillColor") {
+        return function (...args: any[]) { ops.push({ kind: "setFillColor", args }); return (target.setFillColor as any).apply(target, args); };
+      }
+      if (name === "setDrawColor") {
+        return function (...args: any[]) { ops.push({ kind: "setDrawColor", args }); return (target.setDrawColor as any).apply(target, args); };
+      }
+      if (name === "setLineWidth") {
+        return function (...args: any[]) { ops.push({ kind: "setLineWidth", args }); return target.setLineWidth.apply(target, args as any); };
+      }
+      return typeof original === "function" ? original.bind(target) : original;
+    },
+  });
+
+  renderer(proxy as any, data, 1);
+
+  // ── Step 2: Group ops into "blocks" by Y proximity ──
+  // Drawing ops with similar Y belong to the same line; consecutive lines without
+  // a big jump form a block (one experience item, one project, etc.).
+  // We cut between blocks so items are never split.
+
+  // First, separate page-background ops (rect with h >= 90% page) from content ops
+  const backgroundOps = ops.filter(o => o.y === -1);
+  const contentOps = ops.filter(o => o.y !== -1);
+
+  // Group ops into blocks. A new block starts when there is a vertical gap
+  // larger than BLOCK_GAP between consecutive drawing Ys.
+  const BLOCK_GAP = 6; // mm
+  type Block = { ops: DrawOp[]; minY: number; maxY: number };
+  const blocks: Block[] = [];
+  let currentBlock: Block | null = null;
+  let lastY = -Infinity;
+  let pendingStyleOps: DrawOp[] = [];
+
+  for (const op of contentOps) {
+    if (op.y === undefined) {
+      // style op — attach to next block
+      pendingStyleOps.push(op);
+      continue;
+    }
+    const y = op.y;
+    if (!currentBlock || y - lastY > BLOCK_GAP) {
+      // new block
+      currentBlock = { ops: [], minY: y, maxY: y };
+      blocks.push(currentBlock);
+    }
+    // flush pending style ops into current block
+    for (const s of pendingStyleOps) currentBlock.ops.push(s);
+    pendingStyleOps = [];
+    currentBlock.ops.push(op);
+    currentBlock.minY = Math.min(currentBlock.minY, y);
+    currentBlock.maxY = Math.max(currentBlock.maxY, y);
+    lastY = y;
+  }
+
+  // ── Step 3: Replay blocks across pages with smart breaks ──
+  const pageContentH = maxY - M;
+  const drawBackground = () => {
+    for (const b of backgroundOps) {
+      replayOp(doc, b, 0);
+    }
+  };
+
+  drawBackground();
+  let pageStartY = blocks.length > 0 ? blocks[0].minY : M;
+  let pageOffset = 0; // subtract from each op's y when drawing
+  let currentPageBottom = maxY;
+
+  for (const block of blocks) {
+    const blockTop = block.minY;
+    const blockBottom = block.maxY;
+    const blockHeight = blockBottom - blockTop;
+
+    // If this block (when offset) would exceed the current page bottom, start a new page
+    const projectedTop = blockTop - pageOffset;
+    const projectedBottom = blockBottom - pageOffset;
+
+    if (projectedBottom > currentPageBottom && blockHeight < pageContentH) {
+      // New page — shift offset so this block starts at top margin
+      doc.addPage();
+      drawBackground();
+      pageOffset = blockTop - M;
+      currentPageBottom = M + pageContentH;
+    }
+
+    for (const op of block.ops) {
+      replayOp(doc, op, pageOffset);
+    }
   }
 }
 
-/** Creates a Proxy around jsPDF that shifts Y coordinates for multi-page rendering */
-function createOffsetProxy(doc: jsPDF, yOffset: number, topMargin: number, maxY: number, pageIndex: number): jsPDF {
-  // Simple approach: override text, line, rect, circle, roundedRect methods
-  // to subtract yOffset from Y params, and skip drawing if outside visible range
-  const pageTop = 0;
-  const pageBottom = maxY + topMargin;
-
-  const handler: ProxyHandler<jsPDF> = {
-    get(target, prop, receiver) {
-      const original = Reflect.get(target, prop, receiver);
-      if (typeof original !== "function") return original;
-
-      if (prop === "text") {
-        return function (text: any, x: number, y: number, options?: any) {
-          const adjustedY = y - yOffset;
-          if (adjustedY < pageTop - 5 || adjustedY > pageBottom + 5) return target;
-          return (target.text as any)(text, x, adjustedY, options);
-        };
-      }
-      if (prop === "line") {
-        return function (x1: number, y1: number, x2: number, y2: number) {
-          return target.line(x1, y1 - yOffset, x2, y2 - yOffset);
-        };
-      }
-      if (prop === "rect") {
-        return function (x: number, y: number, w: number, h: number, style?: string) {
-          return (target.rect as any)(x, y - yOffset, w, h, style);
-        };
-      }
-      if (prop === "circle") {
-        return function (x: number, y: number, r: number, style?: string) {
-          return (target.circle as any)(x, y - yOffset, r, style);
-        };
-      }
-      if (prop === "roundedRect") {
-        return function (x: number, y: number, w: number, h: number, rx: number, ry: number, style?: string) {
-          return (target.roundedRect as any)(x, y - yOffset, w, h, rx, ry, style);
-        };
-      }
-      return original.bind(target);
-    },
-  };
-
-  return new Proxy(doc, handler);
+function replayOp(doc: jsPDF, op: DrawOp, yOffset: number): void {
+  switch (op.kind) {
+    case "text": {
+      const [text, x, y, options] = op.args;
+      (doc.text as any)(text, x, y - yOffset, options);
+      break;
+    }
+    case "line": {
+      const [x1, y1, x2, y2] = op.args;
+      doc.line(x1, y1 - yOffset, x2, y2 - yOffset);
+      break;
+    }
+    case "rect": {
+      const [x, y, w, h, style] = op.args;
+      // Background rects (yOffset=0 path) drawn at original coords
+      const adjY = op.y === -1 ? y : y - yOffset;
+      (doc.rect as any)(x, adjY, w, h, style);
+      break;
+    }
+    case "circle": {
+      const [x, y, r, style] = op.args;
+      (doc.circle as any)(x, y - yOffset, r, style);
+      break;
+    }
+    case "roundedRect": {
+      const [x, y, w, h, rx, ry, style] = op.args;
+      (doc.roundedRect as any)(x, y - yOffset, w, h, rx, ry, style);
+      break;
+    }
+    case "setFont": doc.setFont.apply(doc, op.args as any); break;
+    case "setFontSize": doc.setFontSize.apply(doc, op.args as any); break;
+    case "setTextColor": (doc.setTextColor as any).apply(doc, op.args); break;
+    case "setFillColor": (doc.setFillColor as any).apply(doc, op.args); break;
+    case "setDrawColor": (doc.setDrawColor as any).apply(doc, op.args); break;
+    case "setLineWidth": doc.setLineWidth.apply(doc, op.args as any); break;
+  }
 }
